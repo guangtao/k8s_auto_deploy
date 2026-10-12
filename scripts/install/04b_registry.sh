@@ -69,14 +69,14 @@ install_harbor() {
     local tgz
     tgz=$(ls "$HDIR"/harbor-offline-installer-*.tgz 2>/dev/null | head -1)
     if [ -z "$tgz" ]; then
-        local art; art=$(ls "$(pkg_arch_dir "$ARCH")"/artifact/*.tar.gz 2>/dev/null | head -1)
+        local art; art=$(artifact_file "$ARCH")
         [ -n "$art" ] || die "缺少 Harbor 安装包：$HDIR/harbor-offline-installer-*.tgz"
         local member
-        member=$(tar tzf "$art" 2>/dev/null | grep -E "^registry/harbor/[^/]+/$ARCH/harbor-offline-installer-.*\.tgz$" | head -1)
+        member=$(tar tf "$art" 2>/dev/null | grep -E "^(\./)?registry/harbor/[^/]+/$ARCH/harbor-offline-installer-.*\.tgz$" | head -1)
         [ -n "$member" ] || die "$ARCH 没有 Harbor 离线安装包（KubeKey 制品中也没有）；可改用 harbor.type=registry"
         log_info "从 KubeKey 制品中提取 $(basename "$member")（较大，请稍候）"
         mkdir -p "$HDIR"
-        tar xzf "$art" -C "$HDIR" --strip-components=4 "$member" || die "提取 Harbor 安装包失败"
+        tar xf "$art" -C "$HDIR" --strip-components="$(awk -F/ '{print NF-1}' <<< "$member")" "$member" || die "提取 Harbor 安装包失败"
         tgz="$HDIR/$(basename "$member")"
     fi
     log_info "下发 $(basename "$tgz") 到 $N"

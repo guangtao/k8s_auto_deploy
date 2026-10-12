@@ -1,0 +1,251 @@
+# K8s 离线部署手册（从拿到部署包开始）
+
+适用：`k8s-deploy-v1.33.4-<架构>-<日期>.tar.xz`（K8s v1.33.4 / Calico v3.27.4 / Longhorn v1.9.1，KubeKey 离线安装）
+
+---
+
+## 0. 先确认拿到的包对不对
+
+| 包名中的架构 | 适用现场 |
+|---|---|
+| `amd64` | 全部节点都是 x86_64 |
+| `arm64` | 全部节点都是 aarch64（鲲鹏、飞腾等） |
+| `amd64-arm64` | x86 + ARM 混合集群 |
+
+- **部署机**是执行本工具的那台机器，可以是集群节点，也可以是独立机器。它的架构必须包含在包名里。比如 `arm64` 包不能在 x86 部署机上执行。
+- 一起拿到的文件：
+  - `*.tar.xz`，大包可能已切成 `*.tar.xz.part00`、`part01` ……
+  - `*.sha256`
+  - `*.DEPLOY.md`（即本文）
+- 包里的 `BUNDLE_INFO.txt` 记录了代码版本、出包时间和包含的镜像清单。
+
+支持的操作系统：
+
+| 架构 | 系统 |
+|---|---|
+| x86_64 | CentOS 7、Kylin V10、UOS、Ubuntu、openEuler、Rocky |
+| aarch64 | Kylin V10、UOS |
+
+UOS ARM 没有 iscsi 包。使用 Longhorn 时，需要事先在 UOS ARM 节点上装好 `iscsi-initiator-utils` / `open-iscsi`。
+
+---
+
+## 1. 部署机准备
+
+| 项目 | 要求 |
+|---|---|
+| 用户 | root（或可 sudo 的用户以 `sudo -i` 执行） |
+| 磁盘 | 解压目录所在分区可用空间 ≥ 包大小 × 4，docker 数据目录（默认 `/data/docker`）≥ 镜像大小 × 2 |
+| 网络 | 能 SSH 到所有节点；所有节点之间网络互通；节点时间差 < 5 秒 |
+| 命令 | `tar`、`xz`、`sha256sum`（系统自带）。python3 / jinja2 / sshpass 没有也不要紧，第 3 步离线安装 |
+
+所有节点：
+- 主机名不重复；
+- 关闭 swap 和防火墙由工具自动完成（02 步）；
+- 建议每台数据盘挂载到 `/data`。
+
+---
+
+## 2. 校验、解压
+
+把所有文件拷到部署机同一个目录，例如 `/opt`：
+
+```bash
+cd /opt
+
+# 未分卷
+sha256sum -c k8s-deploy-v1.33.4-arm64-20261012.sha256
+
+# 分卷：先校验各分卷，合并后再校验整包
+sha256sum -c --ignore-missing k8s-deploy-v1.33.4-arm64-20261012.sha256
+cat k8s-deploy-v1.33.4-arm64-20261012.tar.xz.part* > k8s-deploy-v1.33.4-arm64-20261012.tar.xz
+sha256sum -c --ignore-missing k8s-deploy-v1.33.4-arm64-20261012.sha256
+rm -f k8s-deploy-v1.33.4-arm64-20261012.tar.xz.part*        # 可选，释放空间
+
+# 解压（几分钟），得到 /opt/k8s-deploy
+tar xf k8s-deploy-v1.33.4-arm64-20261012.tar.xz
+cd k8s-deploy
+cat BUNDLE_INFO.txt | head -8
+```
+
+> 如果是 `.tar.zst` 包，解压命令改为 `tar -I zstd -xf <包名>`，需要现场有 zstd。
+
+之后的所有命令都在 `/opt/k8s-deploy` 目录下执行。
+
+---
+
+## 3. 部署机初始化
+
+```bash
+bash deploy.sh bootstrap          # 离线安装 python3、jinja2、sshpass（已安装则跳过）
+bash deploy.sh verify-pkg         # 检查离线包：架构、完整性、必需镜像（应为 FAIL=0）
+```
+
+---
+
+## 4. 修改配置
+
+编辑 `scripts/render_config.py` 中的 `config` 字典，然后执行 `bash deploy.sh render`。render 会校验配置，有错误会直接提示。
+
+### 4.1 必改项
+
+```python
+'deploy_host': '192.168.10.11',          # 部署机 IP
+'host': {
+    'nodes': [                            # 所有节点；arch 不用写，自动识别
+        {'name': 'master1', 'host': '192.168.10.11', 'user': 'root', 'passwd': 'xxx', 'key_dir': '/root/.ssh/id_rsa'},
+        {'name': 'master2', 'host': '192.168.10.12', 'user': 'root', 'passwd': 'xxx', 'key_dir': '/root/.ssh/id_rsa'},
+        {'name': 'master3', 'host': '192.168.10.13', 'user': 'root', 'passwd': 'xxx', 'key_dir': '/root/.ssh/id_rsa'},
+        {'name': 'worker1', 'host': '192.168.10.21', 'user': 'root', 'passwd': 'xxx', 'key_dir': '/root/.ssh/id_rsa'},
+    ],
+    'auth_choice': '1',                   # 1 root+密码  2 普通用户+密码+sudo  3 SSH 密钥
+},
+'roles': {
+    'etcd':   ['master1', 'master2', 'master3'],   # 奇数个
+    'master': ['master1', 'master2', 'master3'],
+    'worker': ['master1', 'master2', 'master3', 'worker1'],
+},
+```
+
+### 4.2 镜像仓库（二选一）
+
+**A. 现场已有 Harbor：**
+
+```python
+'harbor': {'registry': '192.168.10.5', 'scheme': 'https', 'project': 'kubesphereio',
+           'user': 'admin', 'passwd': '现场密码', 'create_project': True, 'install': False, ...}
+```
+
+**B. 由本工具顺便部署 Harbor（04b 步）：**
+
+```python
+'harbor': {'registry': '192.168.10.11',  # = 仓库节点的 IP
+           'scheme': 'https', 'project': 'kubesphereio',
+           'user': 'admin', 'passwd': 'Harbor@2026',   # 作为 admin 初始密码，8~128 位，同时含大写、小写字母和数字
+           'install': True, 'node': 'master1',          # 装在哪个节点；留空 = 部署机
+           'type': 'auto', 'data_dir': '/data/harbor'}
+```
+
+`type: auto` 的含义：
+- x86 节点装 Harbor 2.10.2；
+- ARM 节点装包里的 Harbor aarch64 v2.10.1（社区版）；
+- 出包时如果用了 `--no-harbor`，自动改装 registry:2（无账号认证）。
+
+仓库节点的 80/443 端口必须空闲。
+
+### 4.3 控制面高可用
+
+| 场景 | 配置 |
+|---|---|
+| 单 master | `'lb': {'mode': 'none'}` |
+| 多 master（**推荐**） | `'lb': {'mode': 'kube-vip', 'vip': '192.168.10.100'}`，VIP 必须是同网段空闲 IP |
+| 多 master，无法用 VIP | `'lb': {'mode': 'haproxy'}`，每个 worker 本地代理 |
+| 多 master，keepalived | `'lb': {'mode': 'keepalived', 'vip': '...'}`，**仅 x86**，ARM master 不支持 |
+
+### 4.4 存储与其它
+
+- `storage.longhorn.enabled`：默认 True。
+  - `replicas` 不能大于 worker 数。
+  - 数据目录 `data_path` 建议放数据盘。
+- `storage.nfs`：需要 NFS 时启用。
+  - 填 `server` / `path`；
+  - 如果 NFS 服务器是集群节点，填 `server_node`，工具会自动配置 exports。
+- `kubernetes.pods_cidr` / `service_cidr`：不能与现场网段冲突。
+- `kernel.upgrade`：只对 CentOS 7 x86 生效，会升级到 kernel-lt 并重启节点。
+
+```bash
+bash deploy.sh render      # 渲染并校验配置
+bash deploy.sh facts       # 探测每个节点的架构/系统/内核（检查 SSH 是否都通）
+bash deploy.sh precheck    # 部署前检查：全部 OK 或只有 WARN 再继续
+```
+
+precheck 的 FAIL 项都带有原因说明。修复后重跑 precheck。
+
+---
+
+## 5. 部署
+
+### 一键部署（推荐）
+
+```bash
+bash deploy.sh install        # 关键步骤会二次确认
+# bash deploy.sh install -y   # 全自动，不确认
+```
+
+整个过程约 30~60 分钟，主要耗时在镜像推送和 Longhorn 拉起。需要重启的节点会自动重启并等待其恢复。如果部署机本身需要重启，工具会提示：重启后再次执行 `bash deploy.sh install` 即可，已完成的步骤会自动跳过。
+
+### 或者分步执行（便于定位问题）
+
+| 顺序 | 命令 | 做什么 | 大约耗时 |
+|---|---|---|---|
+| 1 | `bash deploy.sh os` | 安装系统依赖、关 swap/防火墙/SELinux、内核参数 | 2~5 分钟 |
+| 2 | `bash deploy.sh reboot` | 只重启需要重启的节点 | 视情况 |
+| 3 | `bash deploy.sh runtime` | 安装 docker 24.0.9 + containerd | 2~5 分钟 |
+| 4 | `bash deploy.sh registry` | **仅 harbor.install=True**：部署 Harbor | 5~10 分钟 |
+| 5 | `bash deploy.sh images` | 镜像推送到 Harbor（多架构） | 10~30 分钟 |
+| 6 | `bash deploy.sh lb` | 仅 lb.mode=keepalived | 1 分钟 |
+| 7 | `bash deploy.sh k8s` | KubeKey 创建集群，等待节点 Ready | 10~20 分钟 |
+| 8 | `bash deploy.sh storage` | Longhorn / NFS | 5~10 分钟 |
+| 9 | `bash deploy.sh addons` | metrics-server、apiserver 审计 | 2~5 分钟 |
+| 10 | `bash deploy.sh postcheck` | 部署后检查（含真实 PVC 挂载测试） | 2 分钟 |
+
+每一步都可以重复执行。某一步失败时：
+1. 看屏幕上的 ERROR 和 `logs/` 下对应的日志；
+2. 修复问题；
+3. 重跑**该步**即可。
+
+---
+
+## 6. 部署后验证
+
+```bash
+bash deploy.sh postcheck                    # 全部 OK 即部署成功
+kubectl get nodes -o wide                   # 所有节点 Ready，ARCH 列与实际一致
+kubectl get pods -A | grep -v Running       # 除 Completed 外不应有其它状态
+kubectl get sc                              # longhorn (default)
+kubectl top nodes                           # metrics-server 正常
+```
+
+- Harbor 控制台：`https://<harbor.registry>`，账号 `admin` / `harbor.passwd`。
+- Longhorn 控制台：`kubectl -n longhorn-system port-forward svc/longhorn-frontend 8080:80`，然后访问部署机的 8080 端口。
+
+---
+
+## 7. 常见问题
+
+| 现象 | 处理 |
+|---|---|
+| `sha256sum` 校验失败 | 包传输损坏，重新拷贝（U 盘建议 exFAT/NTFS，或出包时用 `--split 4G`） |
+| `tar xf` 报 `xz: Cannot allocate memory` | 部署机内存过小，`xz -dc 包名 \| tar xf -` 也不行时，换一台内存 ≥ 2G 的机器解压 |
+| verify-pkg 报缺少镜像 | 打包机执行 `deploy.sh fetch-images -a <arch>` 补齐后重新出包 |
+| precheck：SSH 失败 | 检查 `auth_choice` 与账号密码；auth 2 需要用户有免密 sudo 或 sudo 密码同登录密码 |
+| precheck：VIP 已被占用 | 换一个空闲 IP |
+| precheck：端口被占用（仓库节点 80/443） | 停掉占用端口的服务，或把 Harbor 装到其它节点（`harbor.node`） |
+| 05 镜像推送失败 `x509` / `http: server gave HTTP response` | `harbor.scheme` 与 Harbor 实际协议不一致；改正后执行 `bash deploy.sh render && bash deploy.sh runtime && bash deploy.sh images` |
+| 05 推送失败 `unauthorized` | Harbor 账号密码不对，或项目不存在且 `create_project=False` |
+| 07 kk 卡在 `pull image` | 节点到 Harbor 不通，或镜像没推全；先跑 `bash deploy.sh images` 看校验结果 |
+| 07 失败想重来 | 修复后直接 `bash deploy.sh k8s`；已存在半成品集群时用 `bash deploy.sh k8s --force` |
+| Longhorn Pod 一直 Init / CrashLoop | 节点缺 iscsi（`systemctl status iscsid`）；UOS ARM 需要手工装 open-iscsi |
+| ARM 集群 metrics-server 不起 | 确认 `pkg/arm64/images/IMAGES.txt` 中有 `metrics-server:v0.7.2`，然后重跑 `images`、`addons` |
+
+日志位置：
+- 每一步的日志：`logs/<步骤>-<时间>.log`；
+- KubeKey 的完整输出：`logs/kk-create.log`；
+- 各节点上下发的文件和远程日志（如 Harbor 安装日志）：`/var/lib/k8s-upgrade-work/`。
+
+---
+
+## 8. 卸载 / 重装
+
+```bash
+bash deploy.sh uninstall      # kk delete cluster，需要输入 DELETE 确认
+```
+
+- 卸载不会删除 Harbor、docker 和 `/data` 下的数据；
+- 重装时直接从第 5 节重新执行 `install`。
+
+## 9. 后续升级
+
+见 `README.md` 第五节。
+- 在打包机执行 `deploy.sh upgrade build` 制作升级包；
+- 把升级包拷到 `upgrade-pkg/` 下，然后执行 `bash deploy.sh upgrade all`。

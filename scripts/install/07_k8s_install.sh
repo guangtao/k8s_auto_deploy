@@ -45,10 +45,10 @@ for a in "${!NEED[@]}"; do
     if [ -f "$WORK_DIR/.artifact-$a.done" ]; then
         log_info "artifact($a) 已解压"; continue
     fi
-    art=$(ls "$(pkg_arch_dir "$a")"/artifact/*.tar.gz 2>/dev/null | head -1)
-    [ -n "$art" ] || die "缺少 $(pkg_arch_dir "$a")/artifact/*.tar.gz"
+    art=$(artifact_file "$a")
+    [ -n "$art" ] || die "缺少 $(pkg_arch_dir "$a")/artifact/*.tar[.gz]"
     log_info "解压 artifact($a): $(basename "$art")（较大，请稍候）"
-    tar xzf "$art" -C "$WORK_DIR/kubekey" || die "解压失败: $art"
+    tar xf "$art" -C "$WORK_DIR/kubekey" || die "解压失败: $art"
     [ -x "$WORK_DIR/kubekey/kube/v$K8S_VERSION/$a/kubeadm" ] \
         || die "artifact($a) 中没有 kube/v$K8S_VERSION/$a/kubeadm，请确认 kubernetes.version 与制品一致"
     touch "$WORK_DIR/.artifact-$a.done"

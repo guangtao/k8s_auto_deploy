@@ -64,17 +64,17 @@ for a in "${ARCHES[@]}"; do
     fi
 
     echo "-- artifact"
-    art=$(ls "$d"/artifact/*.tar.gz 2>/dev/null | head -1)
+    art=$(ls "$d"/artifact/*.tar.gz "$d"/artifact/*.tar 2>/dev/null | head -1)
     if [ -n "$art" ]; then
-        kv=$(tar tzf "$art" 2>/dev/null | grep -E "^kube/v[^/]+/$a/kubeadm$" | head -1)
+        kv=$(tar tf "$art" 2>/dev/null | grep -E "^(\./)?kube/v[^/]+/$a/kubeadm$" | head -1)
         [ -n "$kv" ] && ok "$(basename "$art"): $kv" || bad "$(basename "$art") 中没有 $a 的 kubeadm"
     else
-        bad "缺少 artifact/*.tar.gz"
+        bad "缺少 artifact/*.tar[.gz]"
     fi
 
     echo "-- 镜像仓库（04b 步，可选）"
     if ls "$d"/harbor/harbor-offline-installer-*.tgz >/dev/null 2>&1; then ok "Harbor 安装包 $(basename "$(ls "$d"/harbor/harbor-offline-installer-*.tgz | head -1)")"
-    elif [ -n "${art:-}" ] && [ "$a" = amd64 ]; then ok "Harbor 安装包在 KubeKey 制品中（04b 自动提取）"
+    elif [ -n "${art:-}" ] && [ "$a" = amd64 ] && [ ! -f "$d/artifact/SLIM" ]; then ok "Harbor 安装包在 KubeKey 制品中（04b 自动提取）"
     else warn "无 Harbor 安装包（$a 仓库节点将使用 registry:2）"; fi
     if [ -f "$d/harbor/registry.tar" ]; then
         ra=$(python3 "$(dirname "$0")/../lib/image_index.py" "$d/harbor/registry.tar" | cut -f2 | head -1)

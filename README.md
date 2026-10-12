@@ -145,8 +145,19 @@ tar xf /path/to/k8s-pkg-all-<日期>.tar             # 解压到仓库根目录�
 bash deploy.sh fetch-images --plan                  # 列出缺哪些镜像（按 tar 内真实镜像名+架构判断，不看文件名）
 bash deploy.sh fetch-images                         # 只下载缺的；docker.io 慢可加 --mirror docker.m.daocloud.io
 bash deploy.sh verify-pkg                           # 两种架构都应 FAIL=0
-bash deploy.sh bundle -a amd64,arm64                # 出包；纯 x86 现场 -a amd64，纯 ARM 现场 -a arm64
+bash deploy.sh bundle -a arm64                      # 出包：纯 ARM 现场只打 arm64
+bash deploy.sh bundle -a amd64                      #       纯 x86 现场只打 amd64；混合集群 -a amd64,arm64
+#   常用选项: --split 4G（U 盘）  --no-harbor（现场已有 Harbor）  -c zst（更快，现场需 zstd）  -h 查看全部
 ```
+
+出包时自动瘦身：
+- 只带指定架构的 `pkg/<arch>`；
+- 镜像只带清单中启用的，清单外的 kata、cilium、kube-ovn 等不带；
+- 同架构镜像合并成一个 tar，共享层只存一份；
+- KubeKey 制品去掉 `images/`（镜像单独推送）、`registry/` 和其它架构的二进制，Harbor 安装包挪到 `pkg/<arch>/harbor/`；
+- 整包 xz 多线程压缩，比 gzip 小约 1/3。
+
+产物：`k8s-deploy-v1.33.4-<架构>-<日期>.tar.xz`，以及 `.sha256` 和 `.DEPLOY.md`。现场从拿到包开始的部署步骤见 **[DEPLOY.md](DEPLOY.md)**。
 
 基于 2.1.2 安装包整理出的离线包，按 `images/images-v1.33.4.txt` 对比，只缺 6 个镜像：
 - amd64：backing-image-manager:v1.9.1

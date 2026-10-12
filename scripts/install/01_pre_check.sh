@@ -27,7 +27,7 @@ for a in "${!NEED_ARCH[@]}"; do
     for f in docker/docker-24.0.9.tgz docker/docker-compose; do
         [ -f "$d/$f" ] && ok "$a/$f" || fail "缺少 $a/$f"
     done
-    ls "$d"/artifact/*.tar.gz >/dev/null 2>&1 && ok "$a/artifact" || fail "缺少 $a/artifact/*.tar.gz（KubeKey 制品）"
+    [ -n "$(artifact_file "$a")" ] && ok "$a/artifact" || fail "缺少 $a/artifact/*.tar[.gz]（KubeKey 制品）"
     n_img=$(find "$d/images" -name '*.tar' 2>/dev/null | wc -l)
     [ "$n_img" -gt 0 ] && ok "$a/images ($n_img 个)" || fail "$a/images 为空"
 done
@@ -131,7 +131,7 @@ if [ "$HARBOR_INSTALL" = true ]; then
     hd="$(pkg_arch_dir "$RA")/harbor"
     if [ "$RT" = harbor ]; then
         if ls "$hd"/harbor-offline-installer-*.tgz >/dev/null 2>&1; then ok "Harbor 安装包: $(ls "$hd"/harbor-offline-installer-*.tgz | head -1 | xargs basename)"
-        elif [ "$RA" = amd64 ] && ls "$(pkg_arch_dir amd64)"/artifact/*.tar.gz >/dev/null 2>&1; then ok "Harbor 安装包将从 KubeKey 制品中提取"
+        elif [ "$RA" = amd64 ] && [ ! -f "$(pkg_arch_dir amd64)/artifact/SLIM" ] && [ -n "$(artifact_file amd64)" ]; then ok "Harbor 安装包将从 KubeKey 制品中提取"
         else fail "缺少 $hd/harbor-offline-installer-*.tgz"; fi
     else
         [ -f "$hd/registry.tar" ] && ok "registry:2 镜像 $RA/harbor/registry.tar" || fail "缺少 $hd/registry.tar"

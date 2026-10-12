@@ -368,6 +368,8 @@ deploy_node() {   # 部署机对应的节点名（部署机不是节点时为空
 
 # 离线包路径
 pkg_arch_dir() { echo "$DEPLOY_PKG_DIR/$1"; }          # arch
+# KubeKey 制品：migrate-pkg 整理的是 *.tar.gz；bundle 出的精简包是未压缩的 *.tar（外层整体 xz，压缩率更高）
+artifact_file() { ls "$(pkg_arch_dir "$1")"/artifact/*.tar.gz "$(pkg_arch_dir "$1")"/artifact/*.tar 2>/dev/null | head -1; }
 # OS 包文件名：os_pkg <os> deps|nfs|iscsi   与 2.1.2 包名保持一致
 os_pkg() {
     local os=$1 kind=$2
@@ -443,6 +445,6 @@ resolve_registry_type() {
     local a=$1
     if [ "$HARBOR_TYPE" != auto ]; then echo "$HARBOR_TYPE"; return; fi
     if ls "$(pkg_arch_dir "$a")"/harbor/harbor-offline-installer-*.tgz >/dev/null 2>&1; then echo harbor
-    elif [ "$a" = amd64 ]; then echo harbor
+    elif [ "$a" = amd64 ] && [ ! -f "$(pkg_arch_dir "$a")/artifact/SLIM" ] && [ -n "$(artifact_file "$a")" ]; then echo harbor   # 完整 KubeKey 制品内带 Harbor
     else echo registry; fi
 }

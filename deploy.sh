@@ -45,7 +45,8 @@ cat <<'EOF'
   migrate-pkg --x86 <2.1.2 x86 目录> --arm <2.1.2 arm 目录>   整理离线包到 pkg/{amd64,arm64}（默认硬链接）
   verify-pkg [amd64|arm64]       校验离线包架构、完整性、必需镜像是否齐全
   fetch-images [--plan] [-a amd64,arm64] [-f 清单]   按清单只下载缺的镜像（默认 images/images-v1.33.4.txt）
-  bundle [-a amd64,arm64] [--with-upgrade]                    出包：代码 + 离线包打成一个 tar.gz
+  bundle -a amd64|arm64|amd64,arm64 [--split 4G] [--no-harbor] [-c xz|zst|gz]
+                                 出包：只打指定架构，镜像按清单过滤并去重，xz 压缩（-h 查看全部选项）
 EOF
 }
 
