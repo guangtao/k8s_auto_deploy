@@ -128,30 +128,30 @@ bash deploy.sh upgrade rollback --node node2             # 节点级紧急回滚
 
 ## 八、打包机出包（Linux，需要 docker + 外网）
 
-代码仓库只放代码，**离线包和镜像不进 git**（见 `.gitignore`）。打包机上的离线包由三部分组成：
-
-| 内容 | 位置 | 来源 |
-|---|---|---|
-| 镜像 | `pkg/<arch>/images/*.tar` | `deploy.sh fetch-images` 按清单拉取 |
-| kk、KubeKey 制品、docker、docker-compose | `pkg/<arch>/{kk,artifact,docker}` | 2.1.2 安装包（`migrate-pkg`），或用 kk 重新制作 |
-| 系统依赖包、部署机初始化包、内核 | `pkg/<arch>/{os,bootstrap,kernel}` | 2.1.2 安装包（`migrate-pkg`） |
+代码仓库只放代码，**离线包和镜像不进 git**（见 `.gitignore`）。推荐做法是：**先把已有的离线包整体传到打包机，打包机只下载缺的部分**。
 
 ```bash
-# 公网: https://github.com/guangtao/k8s_auto_deploy.git    内网: 公司 GitLab 的 kubernetes_auto_deploy 仓库
+# ① 已有离线包所在机器：把 pkg/ 打成一个 tar
+#    Windows: 运行 pack_pkg.cmd（使用系统自带 tar）
+#    Linux:   tar cf k8s-pkg.tar pkg/amd64 pkg/arm64 pkg/STATUS.md
+
+# ② 打包机
 git clone -b dgt https://github.com/guangtao/k8s_auto_deploy.git k8s-deploy && cd k8s-deploy
+tar xf /path/to/k8s-pkg-all-<日期>.tar             # 解压到仓库根目录，得到 pkg/amd64、pkg/arm64
 
-# 1) 非镜像部分：从 2.1.2 安装包整理（只取这部分即可，旧镜像可以不要）
-bash deploy.sh migrate-pkg --x86 <2.1.2 x86 目录> --arm <2.1.2 arm 目录>
-#    如果只拷了「去掉镜像」的 2.1.2 包过来也可以，镜像下一步重新拉
-
-# 2) 镜像：按清单拉取 amd64 + arm64（已存在的会跳过，可中断后重跑）
-bash deploy.sh fetch-images -a amd64,arm64 -f images/images-v1.33.4.txt
-#    docker.io 慢可加: --mirror docker.m.daocloud.io
-
-# 3) 校验 + 出包
-bash deploy.sh verify-pkg
-bash deploy.sh bundle -a amd64,arm64        # 纯 x86 现场: -a amd64；纯 ARM 现场: -a arm64
+bash deploy.sh fetch-images --plan                  # 列出缺哪些镜像（按 tar 内真实镜像名+架构判断，不看文件名）
+bash deploy.sh fetch-images                         # 只下载缺的；docker.io 慢可加 --mirror docker.m.daocloud.io
+bash deploy.sh verify-pkg                           # 两种架构都应 FAIL=0
+bash deploy.sh bundle -a amd64,arm64                # 出包；纯 x86 现场 -a amd64，纯 ARM 现场 -a arm64
 ```
+
+基于 2.1.2 安装包整理出的离线包，按 `images/images-v1.33.4.txt` 对比，只缺 6 个镜像：
+- amd64：backing-image-manager:v1.9.1
+- arm64：backing-image-manager、support-bundle-kit、metrics-server、nfs-subdir-external-provisioner、keepalived（osixia/keepalived 可能没有 arm64 版本，ARM 集群用 kube-vip 即可）
+
+没有现成离线包时也可以从零开始：`deploy.sh migrate-pkg` 整理 2.1.2 安装包（kk、制品、docker、系统包），再执行 `fetch-images` 拉取全部镜像。
 
 镜像清单 `images/images-v1.33.4.txt` 按用途分组（核心 / Calico / LocalPV / 高可用 / Longhorn / 插件 / 其它网络插件），按需取消注释。
 推送到 Harbor 时只保留 `name:tag`，所以清单里的仓库地址可以换成任何能访问的镜像站。
+
+> 非镜像部分（系统依赖包）目前 ARM 只有 Kylin、UOS，且 UOS ARM 缺 iscsi 包；这些需要在对应 ARM 系统上用 yumdownloader 等工具单独制作，`fetch-images` 不涉及。
