@@ -33,7 +33,7 @@ bash deploy.sh install        # 关键步骤会二次确认；加 -y 为全自�
 | 02 | `os` | 按「系统+架构」安装依赖包（节点并行）；可选：CentOS7 x86 升级 kernel-lt | 有完成标记 |
 | 03 | `reboot` | 只重启 02 步标记的节点，等待恢复后校验内核；部署机所在节点最后重启 | 不会重复重启 |
 | 04 | `runtime` | docker 24.0.9 + containerd（systemd cgroup、certs.d），按架构下发；独立部署机也会安装 | 已运行则只更新配置 |
-| 04b | `registry` | **可选**（`harbor.install=True`）：在仓库节点部署镜像仓库 —— amd64 装 Harbor 2.10.2（安装包取自 KubeKey 制品），arm64 装 registry:2；https 自动生成自签证书 | 已健康则跳过 |
+| 04b | `registry` | **可选**（`harbor.install=True`）：在仓库节点部署镜像仓库 —— amd64 装 Harbor 2.10.2（安装包取自 KubeKey 制品）；arm64 有 `pkg/arm64/harbor/harbor-offline-installer-*.tgz` 时装 Harbor，否则装 registry:2；https 自动生成自签证书 | 已健康则跳过 |
 | 05 | `images` | 自动创建 Harbor 项目 → 多架构推送 → 检查每个镜像是否覆盖集群里的所有架构 → 校验关键镜像 | 覆盖推送 |
 | 06 | `lb` | 仅 `lb.mode=keepalived`：master 上用容器运行 keepalived（单播 VRRP + apiserver 健康检查） | 重建容器 |
 | 07 | `k8s` | 渲染 kk 配置（每个 host 带 arch）→ 解压所需架构的 artifact → `kk create cluster` → 等待节点 Ready | 集群已存在则跳过（`--force` 强制重跑） |
@@ -50,7 +50,7 @@ bash deploy.sh install        # 关键步骤会二次确认；加 -y 为全自�
 | `os_type` | `auto`（推荐，每个节点单独识别），或强制指定 centos/kylin/uos/ubuntu/openeuler/rockey |
 | `harbor.scheme` | `https`（自签证书，跳过校验）或 `http`；会同时生成 docker / containerd / kk 的仓库配置 |
 | `harbor.install` | `True` = 由 04b 步部署仓库（`harbor.node` 指定节点，留空为部署机；`harbor.registry` 填该节点 IP）；`False` = 使用现场已有 Harbor |
-| `harbor.type` | `auto`（amd64→Harbor，arm64→registry:2）/ `harbor` / `registry`；registry:2 不做账号认证 |
+| `harbor.type` | `auto`（有对应架构的 Harbor 安装包就装 Harbor，否则 registry:2）/ `harbor` / `registry`；registry:2 不做账号认证 |
 | `lb.mode` | `none` 单 master；`kube-vip` KubeKey 内置（多 master 推荐）；`haproxy` KubeKey 内置本地代理；`keepalived` 本工具提供 VIP |
 | `storage.longhorn` / `storage.nfs` | 可同时启用；默认 StorageClass 只能设一个 |
 | `kernel.upgrade` | 仅对 CentOS 7 + x86 + 3.10 内核的节点生效 |
@@ -124,7 +124,7 @@ bash deploy.sh upgrade rollback --node node2             # 节点级紧急回滚
    - 所有模板的渲染与 YAML 校验、配置校验规则
 
    kk、Longhorn 等集群相关步骤需要在测试环境上验证，**建议 x86、ARM、混合架构各跑一次**。
-2. 镜像仓库可以用现场已有的 Harbor，也可以由 04b 步部署。ARM 节点默认部署 registry:2（Harbor 官方没有 arm64 离线包），如需 ARM 版 Harbor，把安装包放到 `pkg/arm64/harbor/` 并设 `harbor.type=harbor`。
+2. 镜像仓库可以用现场已有的 Harbor，也可以由 04b 步部署。Harbor 官方没有 arm64 离线包；ARM 版 Harbor 使用社区 aarch64 构建（已验证 `harbor-offline-installer-aarch64-v2.10.1.tgz`：24 个镜像均为 arm64，镜像标签与 prepare 生成的 compose 一致），放在 `pkg/arm64/harbor/` 即可，不放则自动用 registry:2。
 3. `keepalived` 模式依赖镜像 `osixia/keepalived` 的配置路径 `/container/service/keepalived/assets/`。多 master 场景优先建议用 `kube-vip`（KubeKey 内置）。
 4. ARM 包中没有 metrics-server 镜像。只有 ARM 节点时，09 步会提示并跳过；混合集群中 09 步会自动加 nodeSelector，把它限制到有镜像的架构上。补齐 ARM 镜像后重跑 05、09 步即可。
 5. 系统依赖包沿用 2.1.2 的 `*.tar` + `rpm.sh`。目前 ARM 只有 Kylin 的 bootstrap 包，其它 ARM 系统的部署机需要预先装好 python3 和 jinja2。

@@ -2,7 +2,7 @@
 # ============================================================
 # 04b 部署镜像仓库（可选，harbor.install=True 时执行）
 #   amd64 节点: Harbor 2.10.2 离线安装（安装包来自 KubeKey 制品或 pkg/amd64/harbor/）
-#   arm64 节点: registry:2（Harbor 官方无 arm64 离线包；自备 arm64 安装包可设 harbor.type=harbor）
+#   arm64 节点: pkg/arm64/harbor/ 下有 Harbor 离线安装包（如社区 aarch64 构建）则装 Harbor，否则装 registry:2
 #   https: 自动生成自签 CA + 服务端证书（SAN 含仓库 IP），各节点通过 containerd certs.d / docker
 #          insecure-registries 跳过校验（04 步已配置）
 # 已在运行且健康则跳过；可重复执行
@@ -23,10 +23,9 @@ IP=$(node_ip "$N")
 ARCH=$(node_arch "$N")
 REG_HOST=${HARBOR_REGISTRY%%:*}
 REG_PORT=""; [[ "$HARBOR_REGISTRY" == *:* ]] && REG_PORT=${HARBOR_REGISTRY##*:}
-TYPE=$HARBOR_TYPE
-[ "$TYPE" = auto ] && { [ "$ARCH" = amd64 ] && TYPE=harbor || TYPE=registry; }
 URL="$HARBOR_SCHEME://$HARBOR_REGISTRY"
 HDIR="$(pkg_arch_dir "$ARCH")/harbor"
+TYPE=$(resolve_registry_type "$ARCH")
 log_info "仓库节点 $N ($IP, $ARCH)  类型 $TYPE  地址 $URL  数据目录 $HARBOR_DATA_DIR"
 
 healthy() {

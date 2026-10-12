@@ -75,7 +75,7 @@ for a in "${ARCHES[@]}"; do
     echo "-- 镜像仓库（04b 步，可选）"
     if ls "$d"/harbor/harbor-offline-installer-*.tgz >/dev/null 2>&1; then ok "Harbor 安装包 $(basename "$(ls "$d"/harbor/harbor-offline-installer-*.tgz | head -1)")"
     elif [ -n "${art:-}" ] && [ "$a" = amd64 ]; then ok "Harbor 安装包在 KubeKey 制品中（04b 自动提取）"
-    else warn "无 Harbor 安装包（$a 仓库节点只能用 registry:2）"; fi
+    else warn "无 Harbor 安装包（$a 仓库节点将使用 registry:2）"; fi
     if [ -f "$d/harbor/registry.tar" ]; then
         ra=$(python3 "$(dirname "$0")/../lib/image_index.py" "$d/harbor/registry.tar" | cut -f2 | head -1)
         [ "$ra" = "$a" ] && ok "harbor/registry.tar ($ra)" || bad "harbor/registry.tar 架构为 $ra"

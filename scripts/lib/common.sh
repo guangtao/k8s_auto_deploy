@@ -437,3 +437,12 @@ parallel_nodes() {
     done
     return $rc
 }
+
+# 仓库类型：harbor.type=auto 时，该架构有 Harbor 安装包（或 amd64 的 KubeKey 制品）→ harbor，否则 registry
+resolve_registry_type() {
+    local a=$1
+    if [ "$HARBOR_TYPE" != auto ]; then echo "$HARBOR_TYPE"; return; fi
+    if ls "$(pkg_arch_dir "$a")"/harbor/harbor-offline-installer-*.tgz >/dev/null 2>&1; then echo harbor
+    elif [ "$a" = amd64 ]; then echo harbor
+    else echo registry; fi
+}

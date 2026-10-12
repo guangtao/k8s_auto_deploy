@@ -63,8 +63,9 @@ config = {
         # ---- 04b 步：由本工具部署仓库（可选）----
         'install': False,
         'node': '',                  # 部署到哪个节点（host.nodes 中的 name）；留空 = 部署机
-        # auto: amd64 节点装 Harbor 2.10.2，arm64 节点装 registry:2（Harbor 官方无 arm64 离线包）
-        # harbor / registry: 强制指定（arm64 用 harbor 需自备 pkg/arm64/harbor/harbor-offline-installer-*.tgz）
+        # auto: amd64 节点装 Harbor 2.10.2；arm64 节点在 pkg/arm64/harbor/ 有 Harbor 离线安装包时装 Harbor，
+        #       否则装 registry:2（Harbor 官方无 arm64 离线包）
+        # harbor / registry: 强制指定
         'type': 'auto',
         'data_dir': '/data/harbor',  # 仓库数据目录（镜像存储）
     },

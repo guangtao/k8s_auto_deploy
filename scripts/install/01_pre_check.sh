@@ -118,7 +118,7 @@ fi
 log_step "4. Harbor"
 if [ "$HARBOR_INSTALL" = true ]; then
     RN=$(registry_node); RA=$(node_arch "$RN")
-    RT=$HARBOR_TYPE; [ "$RT" = auto ] && { [ "$RA" = amd64 ] && RT=harbor || RT=registry; }
+    RT=$(resolve_registry_type "$RA")
     log_info "harbor.install=True：04b 步在 $RN（$RA）部署 $RT"
     if curl -sk -o /dev/null --max-time 5 "$HARBOR_SCHEME://$HARBOR_REGISTRY/v2/"; then
         ok "$HARBOR_SCHEME://$HARBOR_REGISTRY 已有服务在运行（04b 会检查健康后跳过安装）"
