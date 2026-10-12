@@ -1,0 +1,53 @@
+apiVersion: audit.k8s.io/v1
+kind: Policy
+omitStages:
+  - "RequestReceived"
+rules:
+  # 忽略健康检查、监控及集群内部通信
+  - level: None
+    resources:
+      - group: ""
+        resources: ["configmaps"]
+        resourceNames: ["extension-apiserver-authentication-client-ca"]
+    userGroups: ["system:authenticated"]
+    verbs: ["get"]
+  - level: None
+    nonResourceURLs:
+      - /healthz*
+      - /version
+      - /readyz*
+      - /livez*
+      - /metrics*
+  # Secrets / ConfigMaps / CRD 的修改删除
+  - level: RequestResponse
+    resources:
+      - group: ""
+        resources: ["secrets", "configmaps"]
+      - group: "apiextensions.k8s.io"
+        resources: ["customresourcedefinitions"]
+    verbs: ["create", "update", "patch", "delete"]
+  # RBAC 相关资源变更
+  - level: Request
+    resources:
+      - group: ""
+        resources: ["namespaces", "serviceaccounts"]
+      - group: "rbac.authorization.k8s.io"
+        resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+    verbs: ["create", "update", "patch", "delete"]
+  # exec / portforward / attach
+  - level: RequestResponse
+    resources:
+      - group: ""
+        resources: ["pods/exec", "pods/portforward", "pods/attach"]
+  # 工作负载变更
+  - level: Request
+    resources:
+      - group: ""
+        resources: ["pods", "pods/log"]
+      - group: "apps"
+        resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+      - group: "batch"
+        resources: ["jobs", "cronjobs"]
+    verbs: ["create", "update", "patch", "delete"]
+  # 其余资源记录元数据
+  - level: Metadata

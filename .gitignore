@@ -1,0 +1,18 @@
+# 离线包 / 镜像 / 升级包：体积大，不进 git（打包机上准备，见 README「打包机出包」）
+/pkg/*
+!/pkg/README.txt
+/upgrade-pkg/*
+!/upgrade-pkg/README.txt
+# 运行时产物
+/config/*
+!/config/.gitkeep
+/logs/*
+!/logs/.gitkeep
+/work/*
+!/work/.gitkeep
+/_to_delete/
+*.tar
+*.tar.gz
+*.tgz
+*.tmp
+__pycache__/

@@ -1,0 +1,51 @@
+# kubeadm upgrade apply/node --patches 使用的 JSON Patch
+# kubeadm 每次升级都会按 kubeadm-config 重新生成 kube-apiserver.yaml，
+# 旧的 sed 方式加入的审计参数会丢失；放在 patches 里则每次重新生成后自动补上。
+{%- set policy_dir = addons.audit.policy_file.rsplit('/', 1)[0] %}
+{%- set log_dir = addons.audit.log_path.rsplit('/', 1)[0] %}
+- op: add
+  path: /spec/containers/0/command/-
+  value: --audit-policy-file={{ addons.audit.policy_file }}
+- op: add
+  path: /spec/containers/0/command/-
+  value: --audit-log-path={{ addons.audit.log_path }}
+- op: add
+  path: /spec/containers/0/command/-
+  value: --audit-log-maxage={{ addons.audit.maxage }}
+- op: add
+  path: /spec/containers/0/command/-
+  value: --audit-log-maxbackup={{ addons.audit.maxbackup }}
+- op: add
+  path: /spec/containers/0/command/-
+  value: --audit-log-maxsize={{ addons.audit.maxsize }}
+- op: add
+  path: /spec/containers/0/command/-
+  value: --audit-log-format=json
+- op: add
+  path: /spec/containers/0/command/-
+  value: --audit-log-compress=true
+- op: add
+  path: /spec/containers/0/volumeMounts/-
+  value:
+    name: audit-policy
+    mountPath: {{ policy_dir }}
+    readOnly: true
+- op: add
+  path: /spec/containers/0/volumeMounts/-
+  value:
+    name: audit-log
+    mountPath: {{ log_dir }}
+- op: add
+  path: /spec/volumes/-
+  value:
+    name: audit-policy
+    hostPath:
+      path: {{ policy_dir }}
+      type: Directory
+- op: add
+  path: /spec/volumes/-
+  value:
+    name: audit-log
+    hostPath:
+      path: {{ log_dir }}
+      type: DirectoryOrCreate

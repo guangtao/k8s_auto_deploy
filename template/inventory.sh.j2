@@ -1,0 +1,84 @@
+# shellcheck shell=bash disable=SC2034
+# ============================================================
+# 自动生成，请勿手改 —— 修改 scripts/render_config.py 后重新渲染
+# ============================================================
+DEPLOY_HOST={{ deploy_host | sq }}
+OS_TYPE={{ os_type | sq }}
+AUTH_CHOICE={{ host.auth_choice | sq }}
+
+# name|ip|user|passwd|key_dir|arch(可空=自动)
+NODES=(
+{%- for n in host.nodes %}
+  {{ (n.name ~ '|' ~ n.host ~ '|' ~ n.user ~ '|' ~ n.passwd ~ '|' ~ n.key_dir ~ '|' ~ (n.arch or '')) | sq }}
+{%- endfor %}
+{%- if not deploy_is_node %}
+  {{ ('__deploy__|' ~ deploy_host ~ '|root|||') | sq }}
+{%- endif %}
+)
+MASTERS=({% for n in roles.master %}{{ n | sq }}{% if not loop.last %} {% endif %}{% endfor %})
+WORKERS=({% for n in roles.worker %}{{ n | sq }}{% if not loop.last %} {% endif %}{% endfor %})
+ETCD_NODES=({% for n in roles.etcd %}{{ n | sq }}{% if not loop.last %} {% endif %}{% endfor %})
+
+DOCKER_DATA_ROOT={{ host.docker_data_root | sq }}
+CONTAINERD_DATA_ROOT={{ host.containerd_data_root | sq }}
+INSECURE_REGISTRIES=({% for r in host.insecure_registries %}{{ r | sq }}{% if not loop.last %} {% endif %}{% endfor %})
+
+HARBOR_REGISTRY={{ harbor.registry.rstrip('/') | sq }}
+HARBOR_SCHEME={{ harbor.scheme | sq }}
+HARBOR_PROJECT={{ harbor.project | sq }}
+HARBOR_USER={{ harbor.user | sq }}
+HARBOR_PASSWD={{ harbor.passwd | sq }}
+HARBOR_CREATE_PROJECT={{ 'true' if harbor.create_project else 'false' }}
+REGISTRY_INSECURE=true
+IMAGE_REPO={{ image_repo | sq }}
+
+K8S_VERSION={{ k8s_version | sq }}
+ETCD_DATA_DIR={{ etcd.data_dir | sq }}
+
+LB_MODE={{ lb.mode | sq }}
+LB_VIP={{ lb.vip | sq }}
+LB_PORT={{ lb.port | int }}
+LB_INTERFACE={{ lb.interface | sq }}
+LB_VRID={{ lb.virtual_router_id | int }}
+
+KERNEL_UPGRADE={{ 'true' if kernel.upgrade else 'false' }}
+
+LONGHORN_ENABLED={{ 'true' if storage.longhorn.enabled else 'false' }}
+LONGHORN_DATA_PATH={{ storage.longhorn.data_path | sq }}
+NFS_ENABLED={{ 'true' if storage.nfs.enabled else 'false' }}
+NFS_SERVER={{ storage.nfs.server | sq }}
+NFS_PATH={{ storage.nfs.path | sq }}
+NFS_SERVER_NODE={{ storage.nfs.server_node | sq }}
+NFS_STORAGE_CLASS={{ storage.nfs.storage_class | sq }}
+NFS_NAMESPACE={{ storage.nfs.namespace | sq }}
+DEFAULT_SC={{ ('longhorn' if storage.longhorn.enabled and storage.longhorn.default_class else (storage.nfs.storage_class if storage.nfs.enabled and storage.nfs.default_class else '')) | sq }}
+
+METRICS_ENABLED={{ 'true' if addons.metrics_server.enabled else 'false' }}
+AUDIT_ENABLED={{ 'true' if addons.audit.enabled else 'false' }}
+AUDIT_POLICY_FILE={{ addons.audit.policy_file | sq }}
+AUDIT_LOG_PATH={{ addons.audit.log_path | sq }}
+AUDIT_MAXAGE={{ addons.audit.maxage | int }}
+AUDIT_MAXBACKUP={{ addons.audit.maxbackup | int }}
+AUDIT_MAXSIZE={{ addons.audit.maxsize | int }}
+
+# ---------------- 升级 ----------------
+UPGRADE_PATH=({% for v in upgrade_path %}{{ v | sq }}{% if not loop.last %} {% endif %}{% endfor %})
+IMAGE_REPOSITORY={{ upgrade.image_repository | sq }}
+UPGRADE_PKG_DIR_CFG={{ upgrade.pkg_dir | sq }}
+BACKUP_DIR={{ upgrade.backup_dir | sq }}
+ETCD_BACKUP={{ 'true' if upgrade.etcd_backup else 'false' }}
+DRAIN={{ 'true' if upgrade.drain else 'false' }}
+DRAIN_TIMEOUT={{ upgrade.drain_timeout | sq }}
+DRAIN_EXTRA_ARGS={{ upgrade.drain_extra_args | sq }}
+WORKER_BATCH={{ upgrade.worker_batch | int }}
+NODE_READY_TIMEOUT={{ upgrade.node_ready_timeout | int }}
+IGNORE_PREFLIGHT_ERRORS={{ upgrade.ignore_preflight_errors | sq }}
+MIN_FREE_GB={{ upgrade.min_free_gb | int }}
+ALLOW_CGROUP_V1={{ 'true' if upgrade.allow_cgroup_v1 else 'false' }}
+CGROUPV1_FAIL_FROM_MINOR={{ upgrade.cgroupv1_fail_from_minor | int }}
+CONTAINERD1_LAST_MINOR={{ upgrade.containerd1_last_minor | int }}
+declare -A CALICO_TESTED_MAX_MINOR=(
+{%- for k, v in upgrade.calico_tested_max_minor.items() %}
+  [{{ k | sq }}]={{ v | int }}
+{%- endfor %}
+)

@@ -1,0 +1,4 @@
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+# 仅在 allow_cgroup_v1=True 时渲染：允许 kubelet 继续运行在 cgroup v1 节点上（过渡方案）
+failCgroupV1: false

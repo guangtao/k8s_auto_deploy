@@ -1,0 +1,72 @@
+# 自动生成（deploy.sh 第 07 步渲染），请勿手改
+apiVersion: kubekey.kubesphere.io/v1alpha2
+kind: Cluster
+metadata:
+  name: {{ kubernetes.cluster_name.split('.')[0] }}
+spec:
+  hosts:
+{%- for n in host.nodes if n.name in k8s_nodes %}
+  - {name: {{ n.name }}, address: {{ n.host }}, internalAddress: {{ n.host }}, user: {{ n.user }}, {% if host.auth_choice == '3' %}privateKeyPath: "{{ n.key_dir }}"{% else %}password: {{ n.passwd | tojson }}{% endif %}, arch: {{ n.arch }}}
+{%- endfor %}
+  roleGroups:
+    etcd:
+{%- for n in roles.etcd %}
+    - {{ n }}
+{%- endfor %}
+    control-plane:
+{%- for n in roles.master %}
+    - {{ n }}
+{%- endfor %}
+    worker:
+{%- for n in roles.worker %}
+    - {{ n }}
+{%- endfor %}
+  controlPlaneEndpoint:
+{%- if lb.mode in ['kube-vip', 'haproxy'] %}
+    internalLoadbalancer: {{ lb.mode }}
+{%- endif %}
+    domain: lb.kubesphere.local
+    address: "{{ lb.vip if lb.mode != 'haproxy' else '' }}"
+    port: {{ lb.port }}
+  system:
+    ntpServers:
+    - {{ ntp_server }}
+    timezone: "{{ kubernetes.timezone }}"
+  kubernetes:
+    version: v{{ k8s_version }}
+    containerManager: {{ kubernetes.container_manager }}
+    clusterName: {{ kubernetes.cluster_name }}
+    autoRenewCerts: {{ 'true' if kubernetes.auto_renew_certs else 'false' }}
+    maxPods: {{ kubernetes.max_pods }}
+  etcd:
+    type: kubekey
+    dataDir: "{{ etcd.data_dir }}"
+    heartbeatInterval: 250
+    electionTimeout: 5000
+    snapshotCount: 10000
+    autoCompactionRetention: 8
+    metrics: basic
+    quotaBackendBytes: 2147483648
+    maxRequestBytes: 1572864
+    maxSnapshots: 5
+    maxWals: 5
+    logLevel: info
+  network:
+    plugin: {{ kubernetes.network_plugin }}
+    kubePodsCIDR: {{ kubernetes.pods_cidr }}
+    kubeServiceCIDR: {{ kubernetes.service_cidr }}
+    multusCNI:
+      enabled: false
+  registry:
+    type: harbor
+    registryMirrors: []
+    insecureRegistries: [{% if harbor.scheme == 'http' %}"{{ harbor.registry }}"{% endif %}]
+    privateRegistry: "{{ harbor.registry }}"
+    namespaceOverride: "{{ harbor.project }}"
+    auths:
+      "{{ harbor.registry }}":
+        username: {{ harbor.user | tojson }}
+        password: {{ harbor.passwd | tojson }}
+        skipTLSVerify: true
+        plainHTTP: {{ 'true' if harbor.scheme == 'http' else 'false' }}
+  addons: []

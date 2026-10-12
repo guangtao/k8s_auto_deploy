@@ -1,0 +1,14 @@
+{
+    "insecure-registries": [
+        "{{ harbor.registry }}"{% for reg in host.insecure_registries %},
+        "{{ reg.split('://')[-1] }}"{% endfor %}
+    ],
+    "log-driver": "json-file",
+    "log-opts": {
+        "max-size": "100m",
+        "max-file": "10"
+    },
+    "data-root": "{{ host.docker_data_root }}",
+    "live-restore": true,
+    "exec-opts": ["native.cgroupdriver=systemd"]
+}
