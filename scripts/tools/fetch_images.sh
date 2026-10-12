@@ -8,7 +8,8 @@
 #
 # 用法:
 #   bash fetch_images.sh -a amd64,arm64 -f images/images-v1.33.4.txt   按清单补齐
-#   bash fetch_images.sh -a arm64 -i <镜像>[|<保存名>] [-i ...]           拉取指定镜像
+#   bash fetch_images.sh -a arm64 -i <镜像>[|<保存名>[|<架构,...>]] [-i ...]   拉取指定镜像
+#   清单行第三段可限定架构，如 docker.io/osixia/keepalived:2.0.20|keepalived:latest|amd64
 #   bash fetch_images.sh ... --plan          只列出需要下载的镜像，不下载（不需要 docker）
 #   bash fetch_images.sh ... --force         忽略已有镜像，全部重新拉取
 #   --mirror <前缀>   仅替换 docker.io 镜像的仓库前缀，例如 --mirror docker.m.daocloud.io
@@ -63,22 +64,21 @@ for a in "${AL[@]}"; do
         fi
     fi
 
-    todo=()
+    todo=(); skipped_arch=0
     for spec in "${IMAGES[@]}"; do
-        src=${spec%%|*}; as=""
-        [[ "$spec" == *"|"* ]] && as=${spec#*|}
+        IFS='|' read -r src as only <<< "$spec"
+        if [ -n "$only" ] && [[ ",$only," != *",$a,"* ]]; then skipped_arch=$((skipped_arch + 1)); continue; fi
         want=$(normalize "${as:-$src}")
         if [ -n "$have" ] && grep -qxF "$want" <<< "$have"; then continue; fi
         todo+=("$spec")
     done
-    echo "[PLAN] $a: 清单 ${#IMAGES[@]} 个，已有 $(( ${#IMAGES[@]} - ${#todo[@]} )) 个，需下载 ${#todo[@]} 个"
+    echo "[PLAN] $a: 清单 ${#IMAGES[@]} 个（其中 $skipped_arch 个不适用 $a），已有 $(( ${#IMAGES[@]} - skipped_arch - ${#todo[@]} )) 个，需下载 ${#todo[@]} 个"
     for spec in "${todo[@]}"; do echo "         - ${spec%%|*}"; done
     total_new=$((total_new + ${#todo[@]}))
     $PLAN && continue
 
     for spec in "${todo[@]}"; do
-        src=${spec%%|*}; as=""
-        [[ "$spec" == *"|"* ]] && as=${spec#*|}
+        IFS='|' read -r src as _ <<< "$spec"
         pull=$src
         if [ -n "$MIRROR" ] && [[ "$src" == docker.io/* ]]; then pull="$MIRROR/${src#docker.io/}"; fi
         f="$OUT/$a/images/fetched_$(normalize "${as:-$src}" | tr ':/' '__').tar"

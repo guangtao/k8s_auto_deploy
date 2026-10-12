@@ -5,7 +5,7 @@
 #   bash deploy.sh fetch-images -a amd64,arm64 -f images/images-v1.33.4.txt
 #   # 访问 docker.io 慢时可加镜像加速前缀，例如: --mirror docker.m.daocloud.io
 #
-# 格式: <拉取地址>[|<保存为 name:tag>]
+# 格式: <拉取地址>[|<保存为 name:tag>[|<仅这些架构，逗号分隔>]]
 #   推送到 Harbor 时只保留最后一段 name:tag（去掉仓库前缀），因此这里的仓库地址可以随意换成可访问的镜像站；
 #   "|" 后面的名字用于与模板中写死的 name:tag 对齐。
 # 以 # 开头的行不拉取；按需取消注释。
@@ -36,8 +36,8 @@ registry.cn-beijing.aliyuncs.com/kubesphereio/linux-utils:3.3.0
 registry.cn-beijing.aliyuncs.com/kubesphereio/kube-vip:v0.7.2
 # lb.mode=haproxy
 registry.cn-beijing.aliyuncs.com/kubesphereio/haproxy:2.9.6-alpine
-# lb.mode=keepalived（osixia/keepalived 可能没有 arm64 版本；ARM 集群建议用 kube-vip）
-docker.io/osixia/keepalived:2.0.20|keepalived:latest
+# lb.mode=keepalived —— osixia/keepalived 只有 amd64 版本，ARM 集群请用 lb.mode=kube-vip
+docker.io/osixia/keepalived:2.0.20|keepalived:latest|amd64
 
 # ---------- 5. Longhorn v1.9.1（storage.longhorn.enabled）----------
 docker.io/longhornio/longhorn-manager:v1.9.1

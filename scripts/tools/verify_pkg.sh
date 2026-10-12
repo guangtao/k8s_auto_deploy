@@ -108,7 +108,10 @@ for a in "${ARCHES[@]}"; do
     ok "有效镜像 $(grep -c . <<< "$good") 个"
     for img in $REQUIRED; do grep -qx "$img" <<< "$good" || bad "缺少必需镜像 $img"; done
     for img in $LONGHORN; do grep -qx "$img" <<< "$good" || bad "缺少 Longhorn 镜像 $img"; done
-    for img in $OPTIONAL; do grep -qx "$img" <<< "$good" || warn "缺少可选镜像 $img"; done
+    for img in $OPTIONAL; do
+        [ "$a" = arm64 ] && [ "$img" = keepalived:latest ] && continue   # 上游无 arm64 版本，ARM 用 kube-vip
+        grep -qx "$img" <<< "$good" || warn "缺少可选镜像 $img"
+    done
 done
 
 echo -e "\n汇总: ${R}FAIL=$FAIL${N}  ${Y}WARN=$WARN${N}"

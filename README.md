@@ -150,7 +150,8 @@ bash deploy.sh bundle -a amd64,arm64                # 出包；纯 x86 现场 -a
 
 基于 2.1.2 安装包整理出的离线包，按 `images/images-v1.33.4.txt` 对比，只缺 6 个镜像：
 - amd64：backing-image-manager:v1.9.1
-- arm64：backing-image-manager、support-bundle-kit、metrics-server、nfs-subdir-external-provisioner、keepalived（osixia/keepalived 可能没有 arm64 版本，ARM 集群用 kube-vip 即可）
+- arm64：backing-image-manager、support-bundle-kit、metrics-server、nfs-subdir-external-provisioner
+- keepalived 镜像（osixia/keepalived）只有 amd64 版本，清单中已限定只拉 amd64；ARM 集群高可用请用 `lb.mode=kube-vip`
 
 没有现成离线包时也可以从零开始：`deploy.sh migrate-pkg` 整理 2.1.2 安装包（kk、制品、docker、系统包），再执行 `fetch-images` 拉取全部镜像。
 

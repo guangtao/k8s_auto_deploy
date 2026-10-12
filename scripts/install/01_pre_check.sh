@@ -109,6 +109,11 @@ if [ -n "$LB_VIP" ]; then
     fi
 fi
 log_info "LB 模式: $LB_MODE   master 数: ${#MASTERS[@]}"
+if [ "$LB_MODE" = keepalived ]; then
+    for m in "${MASTERS[@]}"; do
+        [ "$(node_arch "$m")" = arm64 ] && fail "master $m 为 arm64：keepalived 镜像(osixia/keepalived)没有 arm64 版本，请改用 lb.mode=kube-vip"
+    done
+fi
 
 log_step "4. Harbor"
 if [ "$HARBOR_INSTALL" = true ]; then
