@@ -25,6 +25,10 @@ harbor_api() {   # method path [data]
 
 ensure_harbor_project() {
     local project=$1 code
+    if [ "$(curl -sk -o /dev/null -w '%{http_code}' --max-time 5 "${HARBOR_SCHEME}://${HARBOR_REGISTRY}/api/v2.0/ping")" != 200 ]; then
+        log_info "仓库不是 Harbor（如 registry:2），无需创建项目"
+        return 0
+    fi
     code=$(harbor_api HEAD "/projects?project_name=$project")
     if [ "$code" = "200" ]; then
         log_info "Harbor 项目 $project 已存在"

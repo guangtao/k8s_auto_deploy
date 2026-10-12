@@ -348,10 +348,21 @@ ETCDCTL="env ETCDCTL_API=3 $(command -v etcdctl || echo /usr/local/bin/etcdctl) 
 # 部署机伪节点（部署机不在集群中时由 inventory 自动加入）
 has_deploy_pseudo() { local l; for l in "${NODES[@]}"; do [ "${l%%|*}" = "__deploy__" ] && return 0; done; return 1; }
 # 需要容器运行时的机器 = K8s 节点 + 独立部署机
-runtime_targets() { k8s_nodes; has_deploy_pseudo && echo "__deploy__"; }
-deploy_node() {   # 部署机对应的节点名
-    local l; for l in "${NODES[@]}"; do
-        IFS='|' read -r n ip _ <<< "$l"; [ "$ip" = "$DEPLOY_HOST" ] && { echo "$n"; return; }
+runtime_targets() {
+    local t; t=$( { k8s_nodes; has_deploy_pseudo && echo "__deploy__"; [ "$HARBOR_INSTALL" = true ] && registry_node; } | awk '!seen[$0]++')
+    echo "$t"
+}
+# 04b 步部署仓库的节点：harbor.node，留空 = 部署机
+registry_node() {
+    if [ -n "$HARBOR_NODE" ]; then echo "$HARBOR_NODE"
+    elif [ -n "$(deploy_node)" ]; then deploy_node
+    else echo "__deploy__"; fi
+}
+deploy_node() {   # 部署机对应的节点名（部署机不是节点时为空，不返回 __deploy__ 占位）
+    local l n ip; for l in "${NODES[@]}"; do
+        IFS='|' read -r n ip _ <<< "$l"
+        [ "$n" = "__deploy__" ] && continue
+        [ "$ip" = "$DEPLOY_HOST" ] && { echo "$n"; return; }
     done
 }
 

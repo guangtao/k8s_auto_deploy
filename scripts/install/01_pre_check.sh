@@ -111,6 +111,28 @@ fi
 log_info "LB 模式: $LB_MODE   master 数: ${#MASTERS[@]}"
 
 log_step "4. Harbor"
+if [ "$HARBOR_INSTALL" = true ]; then
+    RN=$(registry_node); RA=$(node_arch "$RN")
+    RT=$HARBOR_TYPE; [ "$RT" = auto ] && { [ "$RA" = amd64 ] && RT=harbor || RT=registry; }
+    log_info "harbor.install=True：04b 步在 $RN（$RA）部署 $RT"
+    if curl -sk -o /dev/null --max-time 5 "$HARBOR_SCHEME://$HARBOR_REGISTRY/v2/"; then
+        ok "$HARBOR_SCHEME://$HARBOR_REGISTRY 已有服务在运行（04b 会检查健康后跳过安装）"
+    else
+        hp=${HARBOR_REGISTRY##*:}; [ "$hp" = "$HARBOR_REGISTRY" ] && hp=""
+        ports="${hp:-80 443}"
+        busy=$(run_remote "$RN" "for p in $ports; do (ss -tln 2>/dev/null || netstat -tln) | awk '{print \$4}' | grep -qE \":\$p\$\" && echo \$p; done" 2>/dev/null | tr '\n' ' ')
+        [ -z "$busy" ] && ok "$RN 端口 $ports 空闲" || fail "$RN 端口被占用: $busy（仓库需要）"
+    fi
+    hd="$(pkg_arch_dir "$RA")/harbor"
+    if [ "$RT" = harbor ]; then
+        if ls "$hd"/harbor-offline-installer-*.tgz >/dev/null 2>&1; then ok "Harbor 安装包: $(ls "$hd"/harbor-offline-installer-*.tgz | head -1 | xargs basename)"
+        elif [ "$RA" = amd64 ] && ls "$(pkg_arch_dir amd64)"/artifact/*.tar.gz >/dev/null 2>&1; then ok "Harbor 安装包将从 KubeKey 制品中提取"
+        else fail "缺少 $hd/harbor-offline-installer-*.tgz"; fi
+    else
+        [ -f "$hd/registry.tar" ] && ok "registry:2 镜像 $RA/harbor/registry.tar" || fail "缺少 $hd/registry.tar"
+    fi
+    [ "$HARBOR_SCHEME" = https ] && { command -v openssl >/dev/null && ok "openssl 可用（生成自签证书）" || fail "部署机缺少 openssl"; }
+else
 code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 "$HARBOR_SCHEME://$HARBOR_REGISTRY/v2/")
 case "$code" in
     200|401) ok "Harbor $HARBOR_SCHEME://$HARBOR_REGISTRY 可访问 ($code)" ;;
@@ -122,6 +144,7 @@ for n in $(k8s_nodes); do
     c=$(run_remote "$n" "curl -sk -o /dev/null -w '%{http_code}' --max-time 5 $HARBOR_SCHEME://$HARBOR_REGISTRY/v2/" 2>/dev/null)
     [ "$c" = 200 ] || [ "$c" = 401 ] && ok "$n -> Harbor 连通" || fail "$n 无法访问 Harbor (code=$c)"
 done
+fi
 
 if [ "$NFS_ENABLED" = true ]; then
     log_step "5. NFS"

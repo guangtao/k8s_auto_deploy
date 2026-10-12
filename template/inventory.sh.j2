@@ -29,6 +29,10 @@ HARBOR_PROJECT={{ harbor.project | sq }}
 HARBOR_USER={{ harbor.user | sq }}
 HARBOR_PASSWD={{ harbor.passwd | sq }}
 HARBOR_CREATE_PROJECT={{ 'true' if harbor.create_project else 'false' }}
+HARBOR_INSTALL={{ 'true' if harbor.install else 'false' }}
+HARBOR_NODE={{ harbor.node | sq }}
+HARBOR_TYPE={{ harbor.type | sq }}
+HARBOR_DATA_DIR={{ harbor.data_dir | sq }}
 REGISTRY_INSECURE=true
 IMAGE_REPO={{ image_repo | sq }}
 

@@ -26,6 +26,7 @@ cat <<'EOF'
   os          02 系统依赖包（+ 可选内核升级）
   reboot      03 重启需要的节点
   runtime     04 docker / containerd
+  registry    04b 部署 Harbor / registry:2（仅 harbor.install=True）
   images      05 推送多架构镜像到 Harbor
   lb          06 keepalived VIP（仅 lb.mode=keepalived）
   k8s         07 KubeKey 创建集群   [--force]
@@ -82,6 +83,7 @@ case "$cmd" in
     os)        ensure_facts; run "$I/02_os_prepare.sh" "$@" ;;
     reboot)    ensure_facts; run "$I/03_reboot.sh" "$@" ;;
     runtime)   ensure_facts; run "$I/04_runtime.sh" "$@" ;;
+    registry)  ensure_facts; run "$I/04b_registry.sh" "$@" ;;
     images)    ensure_facts; run "$I/05_image_push.sh" "$@" ;;
     lb)        ensure_facts; run "$I/06_lb.sh" "$@" ;;
     k8s)       ensure_facts; run "$I/07_k8s_install.sh" "$@" ;;
@@ -99,6 +101,7 @@ case "$cmd" in
         run "$I/03_reboot.sh"
         run "$I/facts.sh"            # 重启后内核信息刷新
         run "$I/04_runtime.sh"
+        run "$I/04b_registry.sh"
         run "$I/05_image_push.sh"
         run "$I/06_lb.sh"
         run "$I/07_k8s_install.sh"
@@ -148,7 +151,7 @@ EOF
         case "$ch" in
             1) exec bash "$0" install ;;
             2) exec bash "$0" precheck ;;
-            3) read -r -p "步骤名(precheck/os/reboot/runtime/images/lb/k8s/storage/addons/postcheck): " st; exec bash "$0" "$st" ;;
+            3) read -r -p "步骤名(precheck/os/reboot/runtime/registry/images/lb/k8s/storage/addons/postcheck): " st; exec bash "$0" "$st" ;;
             4) exec bash "$0" upgrade all ;;
             5) exec bash "$0" uninstall ;;
             *) usage ;;

@@ -10,6 +10,7 @@ k8s-deploy 统一配置 + 渲染（x86_64 / aarch64 / 混合架构）
 """
 import json
 import os
+import re
 import shlex
 import shutil
 import sys
@@ -51,14 +52,21 @@ config = {
         'worker': ['node1', 'node2', 'node3'],
     },
 
-    # 现场已有 Harbor（必需）
+    # 镜像仓库：使用现场已有 Harbor，或由本工具在 04b 步部署（install=True）
     'harbor': {
-        'registry': '10.1.72.167',   # 主机[:端口]，不带 http://
+        'registry': '10.1.72.167',   # 主机[:端口]，不带 http://；install=True 时填仓库节点的 IP
         'scheme': 'https',           # https（自签证书，跳过校验）或 http
         'project': 'kubesphereio',   # 镜像统一推到该项目（KubeKey namespaceOverride）
-        'user': 'admin',
-        'passwd': 'Harbor12345',
+        'user': 'admin',             # install=True 时 Harbor 管理员固定为 admin
+        'passwd': 'Harbor12345',     # install=True 时作为 Harbor admin 初始密码
         'create_project': True,      # 项目不存在时自动创建（公开项目）
+        # ---- 04b 步：由本工具部署仓库（可选）----
+        'install': False,
+        'node': '',                  # 部署到哪个节点（host.nodes 中的 name）；留空 = 部署机
+        # auto: amd64 节点装 Harbor 2.10.2，arm64 节点装 registry:2（Harbor 官方无 arm64 离线包）
+        # harbor / registry: 强制指定（arm64 用 harbor 需自备 pkg/arm64/harbor/harbor-offline-installer-*.tgz）
+        'type': 'auto',
+        'data_dir': '/data/harbor',  # 仓库数据目录（镜像存储）
     },
 
     'kubernetes': {
@@ -194,6 +202,22 @@ def validate(cfg):
         e.append('harbor.scheme 只能是 http/https')
     if '://' in cfg['harbor']['registry']:
         e.append('harbor.registry 不要带 http(s)://')
+    h = cfg['harbor']
+    if h.get('install'):
+        if h.get('type', 'auto') not in ('auto', 'harbor', 'registry'):
+            e.append('harbor.type 只能是 auto/harbor/registry')
+        if h.get('node') and h['node'] not in names:
+            e.append(f"harbor.node={h['node']} 不在 host.nodes 里")
+        node_ip = next((n['host'] for n in nodes if n['name'] == h.get('node')), cfg['deploy_host'])
+        reg_host = h['registry'].rstrip('/').split(':')[0]
+        if reg_host != node_ip:
+            e.append(f"harbor.install=True 时 harbor.registry 的主机部分应为仓库节点 IP {node_ip}（当前 {reg_host}）")
+        if h['user'] != 'admin':
+            e.append("harbor.install=True 时 harbor.user 必须为 admin")
+        pw = str(h['passwd'])
+        if (h.get('type') != 'registry') and not (8 <= len(pw) <= 128 and re.search(r'[a-z]', pw)
+                                                   and re.search(r'[A-Z]', pw) and re.search(r'[0-9]', pw)):
+            e.append('Harbor 管理员密码需 8-128 位，且同时包含大写、小写字母和数字')
     nfs = cfg['storage']['nfs']
     if nfs['enabled'] and not nfs['server']:
         e.append('storage.nfs.enabled=True 时需填写 storage.nfs.server')

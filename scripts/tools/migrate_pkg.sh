@@ -9,6 +9,7 @@
 #     images/*.tar                全部镜像（ks3.4.1-images/*.tar）
 #     os/*.tar                    系统依赖 / nfs / iscsi 离线包（Centos.tar、Kylinnfs.tar、iscsi-kylin.tar ...）
 #     kernel/kernel.tar           仅 amd64：CentOS7 kernel-lt
+#     harbor/registry.tar         registry:2 镜像（04b 步，arm64 默认仓库）
 #     bootstrap/<os>/*.rpm        部署机 python3 / sshpass
 #     bootstrap/pip/*.whl         jinja2 / MarkupSafe
 #
@@ -59,6 +60,27 @@ put() {   # src dst_dir [新文件名]
     esac
 }
 
+INDEXER="$(cd "$(dirname "$0")/.." && pwd)/lib/image_index.py"
+# 架构校验：镜像 tar 读 manifest，系统包看包内 rpm/deb 文件名；不符或损坏 -> 放入 _quarantine
+img_ok() {   # tar arch
+    command -v python3 >/dev/null || return 0
+    local r; r=$(python3 "$INDEXER" "$1" | cut -f2 | sort -u)
+    [ "$r" = "$2" ]
+}
+os_ok() {    # tar arch
+    local l x r; l=$(tar tf "$1" 2>/dev/null) || return 1
+    x=$(grep -cE 'x86_64|_amd64' <<< "$l"); r=$(grep -cE 'aarch64|_arm64' <<< "$l")
+    if [ "$2" = amd64 ]; then [ "$r" -eq 0 ] || [ "$x" -gt 0 ]; else [ "$x" -eq 0 ] || [ "$r" -gt 0 ]; fi
+}
+put_checked() {   # kind(img|os) src dst_dir arch
+    if { [ "$1" = img ] && img_ok "$2" "$4"; } || { [ "$1" = os ] && os_ok "$2" "$4"; }; then
+        put "$2" "$3"
+    else
+        WARNS+=("$4: $(basename "$2") 架构不符或已损坏，放入 _quarantine/$4-$1")
+        put "$2" "$DST/_quarantine/$4-$1"
+    fi
+}
+
 file_arch() {   # 用 file 判断 ELF 架构
     case "$(file -b "$1" 2>/dev/null)" in
         *x86-64*) echo amd64 ;; *aarch64*) echo arm64 ;; *) echo unknown ;;
@@ -86,12 +108,15 @@ migrate() {
     put "$pkg/docker-compose" "$out/docker"
     [ -f "$pkg/docker-compose" ] && { fa=$(file_arch "$pkg/docker-compose"); [ "$fa" = "$arch" ] || WARNS+=("$arch: docker-compose 架构为 $fa"); }
     # images
-    for f in "$pkg"/ks3.4.1-images/*.tar; do put "$f" "$out/images"; done
+    for f in "$pkg"/ks3.4.1-images/*.tar; do put_checked img "$f" "$out/images" "$arch"; done
+    # 04b 步用：registry:2 镜像（arm64 默认仓库）；Harbor 离线安装包（x86 在 KubeKey 制品里，04b 自动提取）
+    put "$pkg/registry.tar" "$out/harbor"
+    for f in "$pkg"/harbor-offline-installer-*.tgz; do [ -f "$f" ] && put "$f" "$out/harbor"; done
     # os 包
     for f in "$pkg"/{Centos,Kylin,Uos,Ubuntu,openEuler,rockey}.tar "$pkg"/*nfs.tar "$pkg"/iscsi-*.tar; do
         [ -f "$f" ] || continue
         [ "$(basename "$f")" = nfs.tar ] && continue   # 2.1.2 的 nfs.tar 只是两个 yaml，已由模板替代
-        put "$f" "$out/os"
+        put_checked os "$f" "$out/os" "$arch"
     done
     # kernel（仅 amd64 有意义；ARM 包里的 kernel.tar 实为 x86 rpm，跳过）
     if [ "$arch" = amd64 ] && [ -f "$pkg/kernel.tar" ]; then
