@@ -210,18 +210,24 @@ bash deploy.sh install        # 关键步骤会二次确认
 
 ### 或者分步执行（便于定位问题）
 
-| 顺序 | 命令 | 做什么 | 大约耗时 |
-|---|---|---|---|
-| 1 | `bash deploy.sh os` | 安装系统依赖、关 swap/防火墙/SELinux、内核参数 | 2~5 分钟 |
-| 2 | `bash deploy.sh reboot` | 只重启需要重启的节点 | 视情况 |
-| 3 | `bash deploy.sh runtime` | 安装 docker 24.0.9 + containerd | 2~5 分钟 |
-| 4 | `bash deploy.sh registry` | **仅 harbor.install=True**：部署 Harbor | 5~10 分钟 |
-| 5 | `bash deploy.sh images` | 镜像推送到 Harbor（多架构） | 10~30 分钟 |
-| 6 | `bash deploy.sh lb` | 仅 lb.mode=keepalived | 1 分钟 |
-| 7 | `bash deploy.sh k8s` | KubeKey 创建集群，等待节点 Ready | 10~20 分钟 |
-| 8 | `bash deploy.sh storage` | Longhorn / NFS | 5~10 分钟 |
-| 9 | `bash deploy.sh addons` | metrics-server、apiserver 审计 | 2~5 分钟 |
-| 10 | `bash deploy.sh postcheck` | 部署后检查（含真实 PVC 挂载测试） | 2 分钟 |
+| 步骤 | 命令 | 部署的模块 / 做什么 | 作用范围 | 大约耗时 | 验证 |
+|---|---|---|---|---|---|
+| 00 | `bash deploy.sh bootstrap` | 离线安装 python3、jinja2、sshpass | 部署机 | 1 分钟 | `python3 -c 'import jinja2'` 不报错 |
+| — | `bash deploy.sh render` | 校验并渲染配置，生成 `config/inventory.sh` | 部署机 | 秒级 | 无 `[ERROR]` |
+| — | `bash deploy.sh facts` | 识别每台节点的架构、系统、内核、网卡 | 所有节点 | 秒级 | 列出每台节点的 arch / os / kernel |
+| 01 | `bash deploy.sh precheck` | 部署前检查（只读） | 所有节点 | 1 分钟 | 汇总 `FAIL=0` |
+| 02 | `bash deploy.sh os` | 依赖包、关 swap/防火墙/SELinux、内核参数；CentOS 7 x86 安装 kernel-lt 5.4 | K8s 节点 | 2~5 分钟 | 节点上 `swapon --show` 无输出 |
+| 03 | `bash deploy.sh reboot` | 只重启装了新内核的节点，等待恢复并校验内核 | 需重启的节点 | 视情况 | 节点上 `uname -r` 为 5.4 开头 |
+| 04 | `bash deploy.sh runtime` | Docker 24.0.9 + containerd，配置仓库信任 | K8s 节点、部署机、仓库节点 | 2~5 分钟 | `docker info`、`containerd --version` 正常 |
+| 04b | `bash deploy.sh registry` | Harbor（ARM 无安装包时为 registry:2）+ 自签证书；仅 `harbor.install=True` | 仓库节点 | 5~10 分钟 | `curl -k https://<仓库IP>/api/v2.0/health` 为 healthy |
+| 05 | `bash deploy.sh images` | 镜像以多架构 manifest 推到 Harbor 的 `harbor.project` | 部署机 → Harbor | 10~30 分钟 | "关键镜像校验"全部 OK |
+| 06 | `bash deploy.sh lb` | keepalived VIP；仅 `lb.mode=keepalived` | master | 1 分钟 | `ip addr` 能看到 VIP |
+| 07 | `bash deploy.sh k8s` | KubeKey 建集群：etcd、控制面、kubelet、Calico、CoreDNS、NodeLocal DNS、OpenEBS LocalPV、kube-vip/haproxy | K8s 节点 | 10~20 分钟 | `kubectl get nodes` 全部 Ready |
+| 08 | `bash deploy.sh storage` | Longhorn（含 iscsi）/ NFS 动态供给，默认存储类 | K8s 节点 | 5~10 分钟 | `kubectl -n longhorn-system get pod` 全部 Running；`kubectl get sc` 有 default |
+| 09 | `bash deploy.sh addons` | metrics-server；apiserver 审计日志（逐台 master，失败自动还原） | 集群 / master | 2~5 分钟 | `kubectl top nodes` 有数据；master 上有 `/var/log/kubernetes/audit.log` |
+| 10 | `bash deploy.sh postcheck` | 部署后检查（含真实 PVC 挂载测试） | 集群 | 2 分钟 | 全部 OK |
+
+修改配置后，先执行 `render`，再重跑受影响的步骤。例如改了 Harbor 地址，要重跑 04 和 05。07 步需要强制重跑时，用 `bash deploy.sh k8s --force`。
 
 每一步都可以重复执行。某一步失败时：
 1. 看屏幕上的 ERROR 和 `logs/` 下对应的日志；
