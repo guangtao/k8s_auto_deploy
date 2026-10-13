@@ -28,6 +28,31 @@
 
 UOS ARM 没有 iscsi 包。使用 Longhorn 时，需要事先在 UOS ARM 节点上装好 `iscsi-initiator-utils` / `open-iscsi`。
 
+
+### 部署了哪些模块
+
+| 模块 | 版本 | 作用 | 是否部署 | 对应配置 |
+|---|---|---|---|---|
+| Kubernetes（kubeadm / kubelet / kubectl） | v1.33.4 | 集群本体，KubeKey 离线安装 | 默认 | `kubernetes`、`roles` |
+| etcd | 随 KubeKey 制品 | 集群数据存储 | 默认 | `etcd.data_dir` |
+| containerd | 1.7.13 | 节点容器运行时 | 默认 | `kubernetes.container_manager` |
+| Docker + docker-compose | 24.0.9 | 推送镜像、运行 Harbor（部署机和仓库节点） | 默认 | `host.docker_data_root` |
+| Calico | v3.27.4 | Pod 网络 | 默认 | `kubernetes.network_plugin` |
+| CoreDNS + NodeLocal DNS | 1.9.3 / 1.22.20 | 集群 DNS 与节点 DNS 缓存 | 默认 | — |
+| OpenEBS LocalPV | 3.3.0 | KubeKey 自带本地盘存储类 | 默认 | — |
+| Harbor | x86 2.10.2 / ARM 2.10.1 | 镜像仓库 | 可选 | `harbor.install=True` |
+| Longhorn | v1.9.1 | 分布式块存储，默认存储类 | 默认开启 | `storage.longhorn.enabled` |
+| NFS 动态供给 | v4.0.2 | NFS 存储类 | 可选 | `storage.nfs.enabled` |
+| 控制面高可用 | kube-vip v0.7.2 / haproxy 2.9.6 / keepalived | 多 master 的 VIP 或本地代理 | 多 master 时 | `lb.mode` |
+| metrics-server | v0.7.2 | `kubectl top`、HPA | 默认开启 | `addons.metrics_server.enabled` |
+| apiserver 审计日志 | — | 记录 API 操作到 `/var/log/kubernetes/audit.log` | 默认开启 | `addons.audit.enabled` |
+
+另外，每个节点会先做系统初始化：
+- 安装依赖包；
+- 关闭 swap、防火墙和 SELinux；
+- 设置内核参数；
+- CentOS 7 x86 可选升级内核。
+
 ---
 
 ## 1. 部署机准备
