@@ -59,6 +59,22 @@ for a in "${!NEED[@]}"; do
     touch "$WORK_DIR/.artifact-$a.done"
 done
 
+# ---------------- 清理上次失败留下的 etcd 数据 ----------------
+# kk 上次失败后 /var/lib/etcd 里会留下半初始化的数据，重跑时 etcd 以 existing 状态启动、找不到成员而反复退出
+# （日志: "server has been already initialized" + "discovery failed"）。只在集群从未建成时处理：
+#   master 上没有 admin.conf、etcd 没在运行 → 把数据目录改名备份，让 kk 重新初始化
+if ! run_remote "${MASTERS[0]}" "[ -f /etc/kubernetes/admin.conf ]" >/dev/null 2>&1; then
+    for n in "${ETCD_NODES[@]}"; do
+        run_remote "$n" "systemctl is-active -q etcd" >/dev/null 2>&1 && continue
+        if run_remote "$n" "[ -d '$ETCD_DATA_DIR/member' ]" >/dev/null 2>&1; then
+            bak="$ETCD_DATA_DIR.failed-$(date +%Y%m%d%H%M%S)"
+            log_warn "[$n] etcd 未运行且有上次失败留下的数据，移到 $bak 后重新初始化"
+            run_remote "$n" "systemctl stop etcd 2>/dev/null; systemctl reset-failed etcd 2>/dev/null; mv '$ETCD_DATA_DIR' '$bak'" \
+                || die "[$n] 移走 $ETCD_DATA_DIR 失败"
+        fi
+    done
+fi
+
 # ---------------- 创建集群 ----------------
 log_step "kk create cluster（v$K8S_VERSION, LB=$LB_MODE）"
 confirm "开始创建集群？" || exit 1
