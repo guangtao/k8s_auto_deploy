@@ -77,10 +77,16 @@ for n in $(k8s_nodes); do
     g() { sed -n "s/^$1=//p" <<< "$info"; }
     kern=$(g kernel); minv="3.10.0-1062"
     if [ "$(printf '%s\n%s\n' "$minv" "$kern" | sort -V | head -1)" = "$minv" ]; then ok "$n 内核 $kern"; else fail "$n 内核 $kern < $minv"; fi
-    if [ "${kern%%.*}" = 3 ]; then
-        [ "$KERNEL_UPGRADE" = true ] && [ "$os" = centos ] && [ "$a" = amd64 ] \
-            && warn "$n 3.10 内核，将在 02 步升级 kernel-lt 并重启" \
-            || warn "$n 3.10 内核，建议升级到 4.19+（Calico/Longhorn 稳定性）"
+    # K8s 1.32+ 的 kubeadm 预检要求内核 >= 4.15（3.10 直接报错，并且缺 CONFIG_CGROUP_BPF）
+    kmin="4.15"
+    if [ "$(printf '%s\n%s\n' "$kmin" "${kern%%-*}" | sort -V | head -1)" != "$kmin" ]; then
+        if [ "$KERNEL_UPGRADE" = true ] && [ "$os" = centos ] && [ "$a" = amd64 ]; then
+            warn "$n 内核 $kern，将在 02 步升级 kernel-lt 并自动重启"
+        elif [ "$os" = centos ] && [ "$a" = amd64 ]; then
+            fail "$n 内核 $kern 低于 $kmin，K8s v$K8S_VERSION 的 kubeadm 会直接拒绝安装。请在 render_config.py 设 'kernel': {'upgrade': True}（自动升级到 kernel-lt 5.4 并重启）"
+        else
+            fail "$n 内核 $kern 低于 $kmin，K8s v$K8S_VERSION 不支持，请先升级该节点内核"
+        fi
     fi
     if grep -qw active <<< "$(g fw)"; then fail "$n 防火墙运行中（$(g fw)），请关闭或放通端口"; else ok "$n 防火墙未运行"; fi
     [ "$(g dns)" -gt 0 ] 2>/dev/null && ok "$n resolv.conf 有 nameserver" || fail "$n /etc/resolv.conf 无 nameserver（CoreDNS 会异常）"
