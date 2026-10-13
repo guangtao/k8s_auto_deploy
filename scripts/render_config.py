@@ -101,7 +101,7 @@ config = {
 
     # CentOS 7 (3.10 内核) x86 节点升级 kernel-lt 5.4；其它系统/架构自动跳过
     'kernel': {
-        'upgrade': False,
+        'upgrade': True,             # K8s 1.32+ 要求内核 >= 4.15，CentOS 7 的 3.10 必须升级
     },
 
     'storage': {

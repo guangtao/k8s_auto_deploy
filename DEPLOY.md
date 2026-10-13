@@ -176,7 +176,7 @@ bash deploy.sh verify-pkg         # 检查离线包：架构、完整性、必�
   - 填 `server` / `path`；
   - 如果 NFS 服务器是集群节点，填 `server_node`，工具会自动配置 exports。
 - `kubernetes.pods_cidr` / `service_cidr`：不能与现场网段冲突。
-- `kernel.upgrade`：只对 CentOS 7 x86 生效，会升级到 kernel-lt 并重启节点。
+- `kernel.upgrade`：默认 True，只对 CentOS 7 x86 生效，升级到 kernel-lt 5.4 并重启节点。K8s v1.33 要求内核 ≥ 4.15，CentOS 7 自带的 3.10 内核装不上，不要关掉。
 
 ```bash
 bash deploy.sh render      # 渲染并校验配置
@@ -199,7 +199,7 @@ bash deploy.sh install        # 关键步骤会二次确认
 
 整个过程约 30~60 分钟，主要耗时在镜像推送和 Longhorn 拉起。
 
-**需要重启时（仅 CentOS 7 x86 且开启 `kernel.upgrade` 才会升级内核）：**
+**需要重启时（CentOS 7 x86 节点会升级内核并重启，其它系统不需要）：**
 - **其它节点：** 逐台自动重启，等它真正重启完成（以 boot_id 判断）、内核生效后自动继续，流程不中断。
 - **部署机本身：** 如果它也是要重启的节点，会放在最后重启。
   - 用 `-y` 执行时，重启前会注册一次性服务 `k8s-deploy-resume`，开机约 1 分钟后自动继续执行 `install -y`，执行一次后自动删除。
