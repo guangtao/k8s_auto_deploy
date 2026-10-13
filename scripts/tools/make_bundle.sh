@@ -80,7 +80,18 @@ VER=$(sed -n "s/^ *'version': *'\([0-9.]*\)'.*/\1/p" "$ROOT/scripts/render_confi
 NAME="k8s-deploy-v${VER:-x}-$(IFS=-; echo "${AL[*]}")-$(date +%Y%m%d)"
 mkdir -p "$OUTD"; OUTD=$(cd "$OUTD" && pwd)
 OUT="$OUTD/$NAME.$EXT"
-STAGE="$OUTD/.stage-$NAME"
+STAGE="$OUTD/.stage-$NAME.$$"     # 带 PID，多次出包互不干扰
+# 同一个包同一时间只允许一个出包进程（同时跑两次会互相删掉/改写对方的临时文件）
+exec 8> "$OUTD/.$NAME.lock"
+if ! flock -n 8; then
+    die "已有另一个 bundle 进程在出同一个包（$NAME），请等它结束，或用 ps -ef | grep make_bundle 找到后结束它"
+fi
+# 清理以前被强制中断留下的临时目录（对应进程已不存在）
+for old in "$OUTD"/.stage-"$NAME".*; do
+    [ -d "$old" ] || continue
+    pid=${old##*.}; [ "$pid" = $$ ] && continue
+    kill -0 "$pid" 2>/dev/null || rm -rf "$old"
+done
 T0=$(date +%s)
 
 # ---------------- 1. 校验 ----------------
@@ -95,7 +106,8 @@ avail=$(df -Pm "$OUTD" | awk 'NR==2{print $4}')
 info "输出目录 $OUTD 可用 ${avail}MB；出包临时目录 + 产物最多约需 ${need}MB"
 [ "${avail:-0}" -ge "$need" ] || warn "输出目录空间可能不够（可用 -o 指定其它磁盘）"
 rm -rf "$STAGE"; mkdir -p "$STAGE"
-trap 'rm -rf "$STAGE"' EXIT
+trap 'rm -rf "$STAGE" "$OUT.tmp"' EXIT
+trap 'exit 130' INT TERM
 # 原样打包的文件（相对 ROOT）和生成的文件（相对 STAGE）
 FROM_ROOT=(deploy.sh README.md DEPLOY.md scripts template images pkg/README.txt
            config/.gitkeep logs/.gitkeep work/.gitkeep)
@@ -227,7 +239,7 @@ info "未压缩 ${raw}MB -> $OUT（$COMP 多线程，按 CPU 核数；整包通�
 tar -cf - --hard-dereference --owner=0 --group=0 --numeric-owner \
     --exclude='__pycache__' --exclude='*.tmp' --transform 's,^,k8s-deploy/,S' \
     -C "$ROOT" "${FROM_ROOT[@]}" -C "$STAGE" "${FROM_STAGE[@]}" \
-    | "${COMPRESS[@]}" > "$OUT.tmp" && mv "$OUT.tmp" "$OUT" || { rm -f "$OUT.tmp"; die "打包失败（磁盘空间？）"; }
+    | "${COMPRESS[@]}" > "$OUT.tmp" && mv "$OUT.tmp" "$OUT" || { rm -f "$OUT.tmp"; die "打包失败（看上方 tar 报错；常见原因：磁盘空间不足，或同时运行了两个 bundle）"; }
 cp "$ROOT/DEPLOY.md" "$OUTD/$NAME.DEPLOY.md"
 
 # ---------------- 4. 自检 ----------------
