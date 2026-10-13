@@ -172,7 +172,16 @@ bash deploy.sh install        # 关键步骤会二次确认
 # bash deploy.sh install -y   # 全自动，不确认
 ```
 
-整个过程约 30~60 分钟，主要耗时在镜像推送和 Longhorn 拉起。需要重启的节点会自动重启并等待其恢复。如果部署机本身需要重启，工具会提示：重启后再次执行 `bash deploy.sh install` 即可，已完成的步骤会自动跳过。
+整个过程约 30~60 分钟，主要耗时在镜像推送和 Longhorn 拉起。
+
+**需要重启时（仅 CentOS 7 x86 且开启 `kernel.upgrade` 才会升级内核）：**
+- **其它节点：** 逐台自动重启，等它真正重启完成（以 boot_id 判断）、内核生效后自动继续，流程不中断。
+- **部署机本身：** 如果它也是要重启的节点，会放在最后重启。
+  - 用 `-y` 执行时，重启前会注册一次性服务 `k8s-deploy-resume`，开机约 1 分钟后自动继续执行 `install -y`，执行一次后自动删除。
+  - 不加 `-y` 时会先询问是否自动续跑；选否，则重启后需手动再执行一次 `bash deploy.sh install`。
+  - 已完成的步骤都会跳过，内核不会重装，节点也不会再重启。
+  - 查看自动续跑的进度：`tail -f logs/install-resume-*.log`；查看状态：`systemctl status k8s-deploy-resume`。
+  - 续跑期间如果再手动执行 install，会提示已有任务在运行，不会重复执行。
 
 ### 或者分步执行（便于定位问题）
 
@@ -224,6 +233,8 @@ kubectl top nodes                           # metrics-server 正常
 | 05 镜像推送失败 `x509` / `http: server gave HTTP response` | `harbor.scheme` 与 Harbor 实际协议不一致；改正后执行 `bash deploy.sh render && bash deploy.sh runtime && bash deploy.sh images` |
 | 05 推送失败 `unauthorized` | Harbor 账号密码不对，或项目不存在且 `create_project=False` |
 | 07 kk 卡在 `pull image` | 节点到 Harbor 不通，或镜像没推全；先跑 `bash deploy.sh images` 看校验结果 |
+| 03 报"没有开始重启"或"未恢复" | 登录该节点（或看控制台）检查；处理后重跑 `bash deploy.sh install`，已重启完成的节点不会再重启 |
+| 部署机重启后没有自动继续 | `systemctl status k8s-deploy-resume` 和 `logs/install-resume-*.log` 查看原因；手动执行 `bash deploy.sh install -y` 即可 |
 | 07 失败想重来 | 修复后直接 `bash deploy.sh k8s`；已存在半成品集群时用 `bash deploy.sh k8s --force` |
 | Longhorn Pod 一直 Init / CrashLoop | 节点缺 iscsi（`systemctl status iscsid`）；UOS ARM 需要手工装 open-iscsi |
 | ARM 集群 metrics-server 不起 | 确认 `pkg/arm64/images/IMAGES.txt` 中有 `metrics-server:v0.7.2`，然后重跑 `images`、`addons` |

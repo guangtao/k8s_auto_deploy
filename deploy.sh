@@ -94,6 +94,15 @@ case "$cmd" in
     uninstall) ensure_facts; run "$I/99_uninstall.sh" "$@" ;;
     install)
         [ "${1:-}" = "-y" ] && export ASSUME_YES=true
+        export K8S_DEPLOY_INSTALL=1       # 03 步据此决定部署机重启后是否自动续跑
+        # 防止重复执行（例如部署机重启后自动续跑的同时，又手动执行了 install）
+        PIDF=/run/k8s-deploy-install.pid
+        if [ -s "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null && [ "$(cat "$PIDF")" != $$ ]; then
+            echo -e "${RED}[ERROR] 已有一个 deploy.sh install 在运行（可能是部署机重启后的自动续跑）。${NC}"
+            echo "  查看进度: tail -f $ROOT_DIR/logs/install-resume-*.log    状态: systemctl status k8s-deploy-resume"
+            exit 1
+        fi
+        echo $$ > "$PIDF" 2>/dev/null; trap 'rm -f "$PIDF"' EXIT
         run "$I/00_bootstrap.sh"
         ensure_render
         run "$I/facts.sh"
