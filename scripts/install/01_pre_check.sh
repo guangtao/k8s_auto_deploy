@@ -31,9 +31,11 @@ for a in "${!NEED_ARCH[@]}"; do
     n_img=$(find "$d/images" -name '*.tar' 2>/dev/null | wc -l)
     [ "$n_img" -gt 0 ] && ok "$a/images ($n_img 个)" || fail "$a/images 为空"
 done
-[ -x "$(pkg_arch_dir "$DEPLOY_ARCH")/kk" ] && ok "kk ($DEPLOY_ARCH)" || fail "缺少 $(pkg_arch_dir "$DEPLOY_ARCH")/kk"
-# kk 支持的版本
 kkbin="$(pkg_arch_dir "$DEPLOY_ARCH")/kk"
+[ -f "$kkbin" ] && [ ! -x "$kkbin" ] && chmod +x "$kkbin"          # 可执行位丢失（经 Windows 中转）时补上
+if [ -x "$kkbin" ]; then ok "kk ($DEPLOY_ARCH)"
+elif [ -f "$kkbin" ]; then fail "$kkbin 不可执行（chmod 失败，所在分区是否 noexec？）"
+else fail "缺少 $kkbin"; fi
 if [ -x "$kkbin" ]; then
     if strings "$kkbin" 2>/dev/null | grep -q "v$K8S_VERSION"; then ok "kk 支持 v$K8S_VERSION"; else warn "kk 中未找到 v$K8S_VERSION 版本信息，可能不支持"; fi
 fi
@@ -137,15 +139,31 @@ if [ "$HARBOR_INSTALL" = true ]; then
         [ -f "$hd/registry.tar" ] && ok "registry:2 镜像 $RA/harbor/registry.tar" || fail "缺少 $hd/registry.tar"
     fi
     [ "$HARBOR_SCHEME" = https ] && { command -v openssl >/dev/null && ok "openssl 可用（生成自签证书）" || fail "部署机缺少 openssl"; }
+    # 仓库还没装，先确认各节点能连到仓库所在主机（以 SSH 22 端口探测）
+    RIP=${HARBOR_REGISTRY%%:*}
+    for n in $(k8s_nodes); do
+        [ "$n" = "$RN" ] && continue
+        if run_remote "$n" "timeout 3 bash -c '</dev/tcp/$RIP/22' 2>/dev/null || ping -c1 -W2 $RIP >/dev/null 2>&1" >/dev/null 2>&1; then
+            ok "$n -> 仓库主机 $RIP 网络连通"
+        else
+            fail "$n 无法连到仓库主机 $RIP（Harbor 装好后节点也拉不到镜像；检查路由/防火墙）"
+        fi
+    done
 else
 code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 "$HARBOR_SCHEME://$HARBOR_REGISTRY/v2/")
 case "$code" in
     200|401) ok "Harbor $HARBOR_SCHEME://$HARBOR_REGISTRY 可访问 ($code)" ;;
-    *) fail "Harbor $HARBOR_SCHEME://$HARBOR_REGISTRY 不可访问 (code=$code)" ;;
+    *) fail "Harbor $HARBOR_SCHEME://$HARBOR_REGISTRY 不可访问 (code=$code)"
+       log_warn "当前 harbor.install=False，表示使用现场已有的 Harbor。现场没有 Harbor、需要本工具部署时："
+       log_warn "  render_config.py 中设 harbor.install=True（harbor.node 留空 = 装在部署机，registry 填该机 IP），再执行 bash deploy.sh render && bash deploy.sh precheck"
+       NO_HARBOR=1 ;;
 esac
+if [ -z "${NO_HARBOR:-}" ]; then
 code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 -u "$HARBOR_USER:$HARBOR_PASSWD" "$HARBOR_SCHEME://$HARBOR_REGISTRY/api/v2.0/users/current")
 [ "$code" = 200 ] && ok "Harbor 账号可登录" || warn "Harbor 账号校验返回 $code（非 Harbor 仓库可忽略）"
+fi
 for n in $(k8s_nodes); do
+    [ -n "${NO_HARBOR:-}" ] && break
     c=$(run_remote "$n" "curl -sk -o /dev/null -w '%{http_code}' --max-time 5 $HARBOR_SCHEME://$HARBOR_REGISTRY/v2/" 2>/dev/null)
     [ "$c" = 200 ] || [ "$c" = 401 ] && ok "$n -> Harbor 连通" || fail "$n 无法访问 Harbor (code=$c)"
 done

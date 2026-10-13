@@ -200,6 +200,7 @@ for a in "${AL[@]}"; do
     fi
 
     step "2/5 [$a] 其它"
+    chmod +x "$d/kk" "$d/docker/docker-compose" 2>/dev/null || true   # 经 Windows 中转的包会丢可执行位
     for f in kk docker os kernel bootstrap; do [ -e "$d/$f" ] && FROM_ROOT+=("pkg/$a/$f"); done
     [ -f "$d/harbor/registry.tar" ] && FROM_ROOT+=("pkg/$a/harbor/registry.tar")
     if $HARBOR; then

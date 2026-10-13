@@ -24,6 +24,8 @@ esac
 info "部署机: $OS / $ARCH"
 
 BOOT="$ROOT_DIR/pkg/$ARCH/bootstrap"
+# 离线包在 Windows 上中转过时可执行位会丢失，这里统一补上
+chmod +x "$ROOT_DIR"/pkg/*/kk "$ROOT_DIR"/pkg/*/docker/docker-compose 2>/dev/null || true
 
 need_py=1; need_jinja=1; need_sshpass=1
 command -v python3 >/dev/null 2>&1 && need_py=0
