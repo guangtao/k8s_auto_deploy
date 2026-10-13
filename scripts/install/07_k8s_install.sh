@@ -66,10 +66,11 @@ done
 if ! run_remote "${MASTERS[0]}" "[ -f /etc/kubernetes/admin.conf ]" >/dev/null 2>&1; then
     for n in "${ETCD_NODES[@]}"; do
         run_remote "$n" "systemctl is-active -q etcd" >/dev/null 2>&1 && continue
-        if run_remote "$n" "[ -d '$ETCD_DATA_DIR/member' ]" >/dev/null 2>&1; then
+        if run_remote "$n" "[ -d '$ETCD_DATA_DIR/member' ] || grep -q 'INITIAL_CLUSTER_STATE=existing' /etc/etcd.env 2>/dev/null" >/dev/null 2>&1; then
             bak="$ETCD_DATA_DIR.failed-$(date +%Y%m%d%H%M%S)"
             log_warn "[$n] etcd 未运行且有上次失败留下的数据，移到 $bak 后重新初始化"
-            run_remote "$n" "systemctl stop etcd 2>/dev/null; systemctl reset-failed etcd 2>/dev/null; mv '$ETCD_DATA_DIR' '$bak'" \
+            # /etc/etcd.env 也要移走：kk 看到它就认为 etcd 已存在，会再次写 ETCD_INITIAL_CLUSTER_STATE=existing
+            run_remote "$n" "systemctl stop etcd 2>/dev/null; systemctl reset-failed etcd 2>/dev/null; mv '$ETCD_DATA_DIR' '$bak'; [ -f /etc/etcd.env ] && mv /etc/etcd.env '$bak.etcd.env'; true" \
                 || die "[$n] 移走 $ETCD_DATA_DIR 失败"
         fi
     done
