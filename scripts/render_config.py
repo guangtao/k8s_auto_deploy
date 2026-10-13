@@ -62,7 +62,7 @@ config = {
         'create_project': True,      # 项目不存在时自动创建（公开项目）
         # ---- 04b 步：由本工具部署仓库（可选）----
         'install': False,
-        'node': '',                  # 部署到哪个节点（host.nodes 中的 name）；留空 = 部署机
+        'node': '',                  # 部署到哪个节点（host.nodes 中的 name，也可写其 IP）；留空 = 部署机
         # auto: amd64 节点装 Harbor 2.10.2；arm64 节点在 pkg/arm64/harbor/ 有 Harbor 离线安装包时装 Harbor，
         #       否则装 registry:2（Harbor 官方无 arm64 离线包）
         # harbor / registry: 强制指定
@@ -204,11 +204,18 @@ def validate(cfg):
     if '://' in cfg['harbor']['registry']:
         e.append('harbor.registry 不要带 http(s)://')
     h = cfg['harbor']
+    # harbor.node 也可以直接写 IP：是某个节点的 IP 就换成节点名；是部署机 IP（不在 host.nodes 里）就当作留空
+    if h.get('node') and h['node'] not in names:
+        by_ip = {n['host']: n['name'] for n in nodes}
+        if h['node'] in by_ip:
+            h['node'] = by_ip[h['node']]
+        elif h['node'] == cfg['deploy_host']:
+            h['node'] = ''
     if h.get('install'):
         if h.get('type', 'auto') not in ('auto', 'harbor', 'registry'):
             e.append('harbor.type 只能是 auto/harbor/registry')
         if h.get('node') and h['node'] not in names:
-            e.append(f"harbor.node={h['node']} 不在 host.nodes 里")
+            e.append(f"harbor.node={h['node']} 不在 host.nodes 里（填节点 name，如 node1；留空 = 部署机）")
         node_ip = next((n['host'] for n in nodes if n['name'] == h.get('node')), cfg['deploy_host'])
         reg_host = h['registry'].rstrip('/').split(':')[0]
         if reg_host != node_ip:
