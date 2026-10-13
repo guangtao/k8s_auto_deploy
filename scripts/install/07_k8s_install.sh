@@ -49,8 +49,13 @@ for a in "${!NEED[@]}"; do
     [ -n "$art" ] || die "缺少 $(pkg_arch_dir "$a")/artifact/*.tar[.gz]"
     log_info "解压 artifact($a): $(basename "$art")（较大，请稍候）"
     tar xf "$art" -C "$WORK_DIR/kubekey" || die "解压失败: $art"
-    [ -x "$WORK_DIR/kubekey/kube/v$K8S_VERSION/$a/kubeadm" ] \
-        || die "artifact($a) 中没有 kube/v$K8S_VERSION/$a/kubeadm，请确认 kubernetes.version 与制品一致"
+    kb="$WORK_DIR/kubekey/kube/v$K8S_VERSION/$a/kubeadm"
+    if [ ! -f "$kb" ]; then
+        have=$(cd "$WORK_DIR/kubekey" 2>/dev/null && ls -d kube/*/"$a"/kubeadm 2>/dev/null | tr '\n' ' ')
+        die "artifact($a) 中没有 kube/v$K8S_VERSION/$a/kubeadm（制品内实际有: ${have:-无}），请确认 kubernetes.version 与制品一致"
+    fi
+    # 制品里的二进制可能没有可执行位（KubeKey 下载时未设置 / 经 Windows 中转），统一补上
+    find "$WORK_DIR/kubekey" -type f -path "*/$a/*" ! -name '*.tgz' ! -name '*.tar*' ! -name '*.gz' -exec chmod +x {} + 2>/dev/null
     touch "$WORK_DIR/.artifact-$a.done"
 done
 

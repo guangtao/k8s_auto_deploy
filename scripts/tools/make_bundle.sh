@@ -189,6 +189,8 @@ for a in "${AL[@]}"; do
         info "精简制品: 去掉 images/ registry/ $other/（解压中，请稍候）"
         tar xf "$art" -C "$tmp" --anchored --exclude=images --exclude=./images --exclude=registry --exclude=./registry \
             --no-anchored --exclude="$other" || die "解压 $(basename "$art") 失败"
+        # KubeKey 下载的二进制常常没有可执行位，出包时补上
+        find "$tmp" -type f -path "*/$a/*" ! -name '*.tgz' ! -name '*.tar*' ! -name '*.gz' -exec chmod +x {} + 2>/dev/null
         kv=$(cd "$tmp" && ls -d kube/v*/"$a"/kubeadm 2>/dev/null | head -1)
         [ -n "$kv" ] || die "精简后的制品中没有 kube/v*/$a/kubeadm"
         slim="ks3.4-artifact-$a-slim.tar"
