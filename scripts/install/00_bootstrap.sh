@@ -29,7 +29,9 @@ chmod +x "$ROOT_DIR"/pkg/*/kk "$ROOT_DIR"/pkg/*/docker/docker-compose 2>/dev/nul
 
 need_py=1; need_jinja=1; need_sshpass=1
 command -v python3 >/dev/null 2>&1 && need_py=0
-[ $need_py -eq 0 ] && python3 -c 'import jinja2' >/dev/null 2>&1 && need_jinja=0
+VENDOR="$ROOT_DIR/scripts/vendor"   # 自带的纯 Python jinja2 3.0.3 + markupsafe 2.0.1（python >= 3.6）
+jinja_ok() { python3 -c 'import jinja2' >/dev/null 2>&1 || PYTHONPATH="$VENDOR" python3 -c 'import jinja2' >/dev/null 2>&1; }
+[ $need_py -eq 0 ] && jinja_ok && need_jinja=0
 command -v sshpass >/dev/null 2>&1 && need_sshpass=0
 
 if [ $need_py -eq 0 ] && [ $need_jinja -eq 0 ] && [ $need_sshpass -eq 0 ]; then
@@ -53,12 +55,16 @@ fi
 
 command -v python3 >/dev/null 2>&1 || die "python3 安装失败"
 if ! python3 -c 'import jinja2' >/dev/null 2>&1; then
-    [ -d "$BOOT/pip" ] || die "缺少 $BOOT/pip"
-    info "离线安装 jinja2"
-    python3 -m pip install --no-index --find-links="$BOOT/pip" jinja2 \
-        || pip3 install --no-index --find-links="$BOOT/pip" jinja2 \
-        || die "jinja2 安装失败（检查 $BOOT/pip 中 MarkupSafe 的 whl 是否匹配本机 python 版本: $(python3 -V)）"
+    if [ -d "$BOOT/pip" ] && { python3 -m pip install -q --no-index --find-links="$BOOT/pip" jinja2 2>/dev/null \
+                               || pip3 install -q --no-index --find-links="$BOOT/pip" jinja2 2>/dev/null; }; then
+        info "已从离线包安装 jinja2"
+    elif PYTHONPATH="$VENDOR" python3 -c 'import jinja2' >/dev/null 2>&1; then
+        info "离线包中的 jinja2 不支持本机 $(python3 -V 2>&1)，改用代码自带的 jinja2 3.0.3（无需安装）"
+    else
+        die "jinja2 不可用：离线包安装失败，自带版本也无法导入（本机 $(python3 -V 2>&1)，需要 python >= 3.6）"
+    fi
 fi
-python3 -c 'import jinja2; print("jinja2", jinja2.__version__)'
+python3 -c 'import jinja2; print("jinja2", jinja2.__version__)' 2>/dev/null \
+    || PYTHONPATH="$VENDOR" python3 -c 'import jinja2; print("jinja2", jinja2.__version__, "(代码自带)")'
 command -v sshpass >/dev/null 2>&1 || warn "未安装 sshpass（auth_choice=1/2 需要）"
 info "部署机初始化完成"

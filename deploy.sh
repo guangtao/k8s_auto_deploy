@@ -62,7 +62,7 @@ run() {
 
 ensure_render() {
     if [ ! -f "$ROOT_DIR/config/inventory.sh" ] || [ "$S/render_config.py" -nt "$ROOT_DIR/config/inventory.sh" ]; then
-        python3 -c 'import jinja2' 2>/dev/null || run "$I/00_bootstrap.sh"
+        PYTHONPATH="$S/vendor" python3 -c 'import jinja2' 2>/dev/null || run "$I/00_bootstrap.sh"
         echo "[INFO] 渲染配置"
         python3 "$S/render_config.py" || exit 1
     fi
@@ -78,7 +78,7 @@ cmd=${1:-menu}; shift 2>/dev/null
 case "$cmd" in
     -h|--help|help) usage ;;
     bootstrap) run "$I/00_bootstrap.sh" ;;
-    render)    python3 -c 'import jinja2' 2>/dev/null || run "$I/00_bootstrap.sh"; python3 "$S/render_config.py" ;;
+    render)    PYTHONPATH="$S/vendor" python3 -c 'import jinja2' 2>/dev/null || run "$I/00_bootstrap.sh"; python3 "$S/render_config.py" ;;
     facts)     ensure_render; run "$I/facts.sh" ;;
     precheck)  ensure_facts; run "$I/01_pre_check.sh" "$@" ;;
     os)        ensure_facts; run "$I/02_os_prepare.sh" "$@" ;;

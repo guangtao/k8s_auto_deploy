@@ -15,7 +15,13 @@ import shlex
 import shutil
 import sys
 
-from jinja2 import Environment, FileSystemLoader, StrictUndefined
+try:
+    from jinja2 import Environment, FileSystemLoader, StrictUndefined
+except ImportError:
+    # 系统里没有可用的 jinja2（如 CentOS 7 自带 python 3.6，装不上 jinja2 3.1）时，
+    # 使用随代码自带的纯 Python 版本：Jinja2 3.0.3 + MarkupSafe 2.0.1（支持 python >= 3.6）
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'vendor'))
+    from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(BASE, '..'))
