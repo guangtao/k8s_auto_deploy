@@ -17,6 +17,21 @@ prepare_node() {
     # 内核模块与 sysctl（kk 也会设置，这里提前确保 br_netfilter 可用）
     run_remote "$n" 'modprobe br_netfilter 2>/dev/null; modprobe overlay 2>/dev/null
 mkdir -p /etc/modules-load.d && printf "br_netfilter\noverlay\n" > /etc/modules-load.d/k8s-deploy.conf' || true
+    # 防火墙、swap、SELinux：K8s 要求关闭（kk 也会处理一部分，这里统一提前做，保证幂等）
+    run_remote "$n" 'for s in firewalld ufw; do
+    if systemctl is-active -q $s 2>/dev/null || systemctl is-enabled -q $s 2>/dev/null; then
+        systemctl stop $s 2>/dev/null; systemctl disable $s 2>/dev/null; echo "  已关闭并禁用 $s"
+    fi
+done
+command -v ufw >/dev/null 2>&1 && ufw disable >/dev/null 2>&1
+if [ -n "$(swapon --show=NAME --noheadings 2>/dev/null)" ] || grep -qE "^[^#].*\sswap\s" /etc/fstab; then
+    swapoff -a; sed -ri "s@^([^#].*\sswap\s.*)@#\1@" /etc/fstab; echo "  已关闭 swap（/etc/fstab 中已注释）"
+fi
+if command -v getenforce >/dev/null 2>&1 && [ "$(getenforce)" = Enforcing ]; then
+    setenforce 0; echo "  SELinux 已设为 permissive"
+fi
+[ -f /etc/selinux/config ] && sed -ri "s/^SELINUX=enforcing/SELINUX=permissive/" /etc/selinux/config
+true' | sed "s/^/[$n]/" || true
 }
 
 log_step "安装依赖离线包: $(k8s_nodes | tr '\n' ' ')"

@@ -88,10 +88,11 @@ for n in $(k8s_nodes); do
             fail "$n 内核 $kern 低于 $kmin，K8s v$K8S_VERSION 不支持，请先升级该节点内核"
         fi
     fi
-    if grep -qw active <<< "$(g fw)"; then fail "$n 防火墙运行中（$(g fw)），请关闭或放通端口"; else ok "$n 防火墙未运行"; fi
+    fwact=$(tr ' ' '\n' <<< "$(g fw)" | grep -xE 'active|ufw-active' | sed 's/^active$/firewalld/; s/^ufw-active$/ufw/' | tr '\n' ' ')
+    if [ -n "$fwact" ]; then warn "$n 防火墙运行中（${fwact% }），02 步会自动关闭并禁用"; else ok "$n 防火墙未运行"; fi
     [ "$(g dns)" -gt 0 ] 2>/dev/null && ok "$n resolv.conf 有 nameserver" || fail "$n /etc/resolv.conf 无 nameserver（CoreDNS 会异常）"
-    [ "$(g swap)" -gt 0 ] 2>/dev/null && warn "$n 开启了 swap（kk 会关闭）"
-    [ "$(g selinux)" = Enforcing ] && warn "$n SELinux Enforcing（kk 会设为 permissive）"
+    [ "$(g swap)" -gt 0 ] 2>/dev/null && warn "$n 开启了 swap（02 步会关闭）"
+    [ "$(g selinux)" = Enforcing ] && warn "$n SELinux Enforcing（02 步会设为 permissive）"
     hn=$(g hostname)
     [ "$hn" = localhost ] || [[ "$hn" == localhost.* ]] && warn "$n 主机名为 localhost（kk 会改为 $n）"
     [ -n "${SEEN_HN[$hn]:-}" ] && warn "$n 主机名 $hn 与 ${SEEN_HN[$hn]} 重复（kk 会改为节点名）"; SEEN_HN[$hn]=$n
