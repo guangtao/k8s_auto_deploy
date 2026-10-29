@@ -49,7 +49,7 @@ UOS ARM 没有 iscsi 包。使用 Longhorn 时，需要事先在 UOS ARM 节点�
 
 另外，每个节点会先做系统初始化：
 - 安装依赖包；
-- 关闭 swap、防火墙和 SELinux；
+- 关闭 swap（含 fstab、systemd swap 单元、zram）、防火墙（firewalld / ufw / iptables / nftables）和 SELinux；麒麟系统的 KYSEC 设为软模式；
 - 设置内核参数；
 - CentOS 7 x86 可选升级内核。
 
@@ -216,7 +216,7 @@ bash deploy.sh install        # 关键步骤会二次确认
 | — | `bash deploy.sh render` | 校验并渲染配置，生成 `config/inventory.sh` | 部署机 | 秒级 | 无 `[ERROR]` |
 | — | `bash deploy.sh facts` | 识别每台节点的架构、系统、内核、网卡 | 所有节点 | 秒级 | 列出每台节点的 arch / os / kernel |
 | 01 | `bash deploy.sh precheck` | 部署前检查（只读） | 所有节点 | 1 分钟 | 汇总 `FAIL=0` |
-| 02 | `bash deploy.sh os` | 依赖包、关 swap/防火墙/SELinux、内核参数；CentOS 7 x86 安装 kernel-lt 5.4 | K8s 节点 | 2~5 分钟 | 节点上 `swapon --show` 无输出 |
+| 02 | `bash deploy.sh os` | 依赖包、关 swap/防火墙（firewalld、ufw、iptables、nftables）/SELinux、麒麟 KYSEC 软模式、内核参数；CentOS 7 x86 安装 kernel-lt 5.4 | K8s 节点 | 2~5 分钟 | 节点上 `swapon --show` 无输出，`systemctl is-active firewalld` 不是 active |
 | 03 | `bash deploy.sh reboot` | 只重启装了新内核的节点，等待恢复并校验内核 | 需重启的节点 | 视情况 | 节点上 `uname -r` 为 5.4 开头 |
 | 04 | `bash deploy.sh runtime` | Docker 24.0.9 + containerd，配置仓库信任 | K8s 节点、部署机、仓库节点 | 2~5 分钟 | `docker info`、`containerd --version` 正常 |
 | 04b | `bash deploy.sh registry` | Harbor（ARM 无安装包时为 registry:2）+ 自签证书；仅 `harbor.install=True` | 仓库节点 | 5~10 分钟 | `curl -k https://<仓库IP>/api/v2.0/health` 为 healthy |

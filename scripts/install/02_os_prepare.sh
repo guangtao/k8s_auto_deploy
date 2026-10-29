@@ -18,15 +18,32 @@ prepare_node() {
     run_remote "$n" 'modprobe br_netfilter 2>/dev/null; modprobe overlay 2>/dev/null
 mkdir -p /etc/modules-load.d && printf "br_netfilter\noverlay\n" > /etc/modules-load.d/k8s-deploy.conf' || true
     # 防火墙、swap、SELinux：K8s 要求关闭（kk 也会处理一部分，这里统一提前做，保证幂等）
-    run_remote "$n" 'for s in firewalld ufw; do
+    #   firewalld: CentOS/RHEL/Rocky/openEuler/麒麟服务器版/UOS 服务器版   ufw: Ubuntu/Debian 系（含部分 UOS、麒麟桌面版）
+    #   iptables/ip6tables（iptables-services）、nftables: 部分系统装了也会开机加载规则
+    #   iptables/nftables 的 stop 会清空规则：集群已运行（kubelet active）时不动它们，避免清掉 kube-proxy/Calico 的规则
+    run_remote "$n" 'units="firewalld ufw"
+systemctl is-active -q kubelet 2>/dev/null || units="$units iptables ip6tables nftables"
+for s in $units; do
     if systemctl is-active -q $s 2>/dev/null || systemctl is-enabled -q $s 2>/dev/null; then
-        systemctl stop $s 2>/dev/null; systemctl disable $s 2>/dev/null; echo "  已关闭并禁用 $s"
+        systemctl stop $s 2>/dev/null; systemctl disable $s 2>/dev/null; systemctl mask $s >/dev/null 2>&1; echo "  已关闭并禁用 $s"
     fi
 done
 command -v ufw >/dev/null 2>&1 && ufw disable >/dev/null 2>&1
-if [ -n "$(swapon --show=NAME --noheadings 2>/dev/null)" ] || grep -qE "^[^#].*\sswap\s" /etc/fstab; then
+# 麒麟 KYSEC：执行控制会拦截未签名的二进制（containerd、kubelet、calico 等），设为软模式（只记录不拦截）
+if command -v getstatus >/dev/null 2>&1 && command -v setstatus >/dev/null 2>&1; then
+    st=$(getstatus 2>/dev/null | grep -i "kysec status" | awk -F: "{print \$2}" | tr -d " ")
+    if [ -n "$st" ] && [ "$st" != disable ] && [ "$st" != softmode ]; then
+        setstatus softmode -p >/dev/null 2>&1 && echo "  麒麟 KYSEC 已设为 softmode" || echo "  [WARN] 麒麟 KYSEC 设置失败，请手动执行: setstatus softmode -p"
+    fi
+fi
+if [ "$(awk "NR>1" /proc/swaps | wc -l)" -gt 0 ] || grep -qE "^[^#].*\sswap\s" /etc/fstab; then
     swapoff -a; sed -ri "s@^([^#].*\sswap\s.*)@#\1@" /etc/fstab; echo "  已关闭 swap（/etc/fstab 中已注释）"
 fi
+# 不在 fstab 里的 swap（systemd 的 .swap 单元、zram）开机仍会挂上：屏蔽它们
+for u in $(systemctl list-units --type=swap --all --no-legend 2>/dev/null | awk "{print \$1}" | grep "\.swap$"); do
+    systemctl mask "$u" >/dev/null 2>&1 && echo "  已屏蔽 $u"
+done
+systemctl is-enabled -q zramswap 2>/dev/null && { systemctl disable --now zramswap >/dev/null 2>&1; echo "  已关闭 zramswap"; }
 if command -v getenforce >/dev/null 2>&1 && [ "$(getenforce)" = Enforcing ]; then
     setenforce 0; echo "  SELinux 已设为 permissive"
 fi
