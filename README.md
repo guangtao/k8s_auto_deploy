@@ -157,7 +157,7 @@ bash deploy.sh bundle -a amd64                      #       纯 x86 现场只打
 - KubeKey 制品去掉 `images/`（镜像单独推送）、`registry/` 和其它架构的二进制，Harbor 安装包挪到 `pkg/<arch>/harbor/`；
 - 整包 xz 多线程压缩，比 gzip 小约 1/3。
 
-产物：`k8s-deploy-v1.33.4-<架构>-<日期>.tar.xz`，以及 `.sha256` 和 `.DEPLOY.md`。现场从拿到包开始的部署步骤见 **[DEPLOY.md](DEPLOY.md)**。
+产物：`k8s-deploy-v<VERSION>-<架构>.tar.xz`，以及 `.sha256`、`-RELEASE.md`、`-DEPLOY.md`，出包后自动上传 `oss://cyberdownland/k8s_install/`。版本号和上传规则见 [docs/打包与版本规则.md](docs/打包与版本规则.md)。现场从拿到包开始的部署步骤见 **[DEPLOY.md](DEPLOY.md)**。
 
 基于 2.1.2 安装包整理出的离线包，按 `images/images-v1.33.4.txt` 对比，只缺 6 个镜像：
 - amd64：backing-image-manager:v1.9.1

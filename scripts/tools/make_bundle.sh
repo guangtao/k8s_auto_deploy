@@ -28,13 +28,23 @@
 #   --with-upgrade       同时打包 upgrade-pkg/
 #   --no-test            不做压缩包完整性自检（自检会完整解压校验一遍）
 #   --force              verify-pkg 有 FAIL 也继续
-# 产物: <输出目录>/k8s-deploy-v<版本>-<架构>-<日期>.tar.xz（或分卷 .part00 ...）、.sha256、DEPLOY.md
+#   --overwrite          产出目录或 OSS 上已有同名包时覆盖（默认拒绝，提示先升 VERSION）
+#   --oss-dest <oss://…/> 上传目录（默认 oss://cyberdownland/k8s_install/，也可用环境变量 OSS_DEST）
+#   --no-upload          只在本地出包，不上传 OSS
+#
+# 版本号：仓库根目录 VERSION 文件（x.y.z，安装包自己的版本，与 K8s 版本无关），规则见 docs/打包与版本规则.md
+#   每个版本必须有发布说明 docs/releases/v<版本>.md，否则拒绝出包
+# 上传 OSS：自检通过后用 ossutil 上传安装包（或分卷）、.sha256、-RELEASE.md、-DEPLOY.md，并逐个核对。
+#   打包机需要 ossutil（v1/v2 均可，PATH 里叫 ossutil 或 ossutil64，或环境变量 OSSUTIL 指定），
+#   并已 ossutil config 配好 AccessKey（密钥只在打包机上，不进仓库）。打包前先检查权限和同名包。
+# 产物: <输出目录>/k8s-deploy-v<版本>-<架构>.tar.xz（或分卷 .part00 ...）、.sha256、-RELEASE.md、-DEPLOY.md
 # ============================================================
 set -o pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 LIB="$ROOT/scripts/lib"
 ARCHS=""; OUTD="$(dirname "$ROOT")"; COMP=xz; LEVEL=""; SPLIT=""; ALL_IMAGES=false; EXTRA=""
 MERGE=true; HARBOR=true; WITH_UP=false; TEST=true; FORCE=false
+OVERWRITE=false; UPLOAD=true; OSS_DEST="${OSS_DEST:-oss://cyberdownland/k8s_install/}"
 while [ $# -gt 0 ]; do
     case "$1" in
         -a) ARCHS=$2; shift ;;
@@ -49,7 +59,10 @@ while [ $# -gt 0 ]; do
         --with-upgrade) WITH_UP=true ;;
         --no-test) TEST=false ;;
         --force) FORCE=true ;;
-        -h|--help) sed -n '2,36p' "$0"; exit 0 ;;
+        --overwrite) OVERWRITE=true ;;
+        --oss-dest) OSS_DEST=$2; shift ;;
+        --no-upload) UPLOAD=false ;;
+        -h|--help) sed -n '2,45p' "$0"; exit 0 ;;
         *) echo "未知参数 $1（-h 查看帮助）"; exit 1 ;;
     esac
     shift
@@ -76,10 +89,38 @@ esac
 command -v "${COMPRESS[0]}" >/dev/null || die "打包机缺少 ${COMPRESS[0]} 命令"
 command -v python3 >/dev/null || die "需要 python3"
 
+# K8s 版本只作为组件信息记录；安装包版本取 VERSION 文件
 VER=$(sed -n "s/^ *'version': *'\([0-9.]*\)'.*/\1/p" "$ROOT/scripts/render_config.py" | head -1)
-NAME="k8s-deploy-v${VER:-x}-$(IFS=-; echo "${AL[*]}")-$(date +%Y%m%d)"
+PKG_VER=$(tr -d ' \r\n' < "$ROOT/VERSION" 2>/dev/null)
+[[ "$PKG_VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "VERSION 文件缺失或格式不对（应为 x.y.z，如 3.0.0），读到: '$PKG_VER'"
+REL_SRC="$ROOT/docs/releases/v$PKG_VER.md"
+[ -f "$REL_SRC" ] || die "缺少发布说明 docs/releases/v$PKG_VER.md。每个版本出包前必须写发布说明（模板见 docs/releases/README.md）"
+GIT_COMMIT=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)
+GIT_BRANCH=$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)
+if [ -n "$(git -C "$ROOT" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+    warn "有未提交的代码修改，会按当前文件打进包（BUNDLE_INFO 里的 commit 与实际内容不一致）；正式出包前请先提交"
+fi
+NAME="k8s-deploy-v${PKG_VER}-$(IFS=-; echo "${AL[*]}")"
 mkdir -p "$OUTD"; OUTD=$(cd "$OUTD" && pwd)
 OUT="$OUTD/$NAME.$EXT"
+# 同名包已存在：多半是改了代码没升 VERSION，默认不覆盖
+if ! $OVERWRITE && compgen -G "$OUTD/$NAME.$EXT*" >/dev/null; then
+    die "$OUTD 下已有 $NAME.$EXT。代码有变化请先升 VERSION（规则见 docs/打包与版本规则.md）；确认是同一版本重打，加 --overwrite"
+fi
+# 上传前置检查：ossutil 可用、有权限、OSS 上没有同名包（出包要几十分钟，失败要趁早）
+if $UPLOAD; then
+    [[ "$OSS_DEST" == oss://* ]] || die "--oss-dest 必须以 oss:// 开头: $OSS_DEST"
+    OSS_DEST="${OSS_DEST%/}/"
+    OSSUTIL="${OSSUTIL:-$(command -v ossutil || command -v ossutil64 || true)}"
+    [ -n "$OSSUTIL" ] && [ -x "$OSSUTIL" ] || die "找不到 ossutil。安装后执行 ossutil config 配置 AccessKey，或用环境变量 OSSUTIL 指定路径；只想本地出包加 --no-upload"
+    "$OSSUTIL" ls "$OSS_DEST" >/dev/null 2>&1 || die "ossutil 无法访问 $OSS_DEST（检查 ossutil config 的 AccessKey、地域及对 bucket 的权限）；只想本地出包加 --no-upload"
+    for n in "$NAME.$EXT" "$NAME.$EXT.part00"; do
+        if "$OSSUTIL" stat "$OSS_DEST$n" >/dev/null 2>&1 && ! $OVERWRITE; then
+            die "OSS 上已有 $OSS_DEST$n。代码有变化请先升 VERSION；确认是同一版本重传，加 --overwrite"
+        fi
+    done
+    info "出包完成后上传到 $OSS_DEST（ossutil: $OSSUTIL）"
+fi
 STAGE="$OUTD/.stage-$NAME.$$"     # 带 PID，多次出包互不干扰
 # 同一个包同一时间只允许一个出包进程（同时跑两次会互相删掉/改写对方的临时文件）
 exec 8> "$OUTD/.$NAME.lock"
@@ -109,9 +150,9 @@ rm -rf "$STAGE"; mkdir -p "$STAGE"
 trap 'rm -rf "$STAGE" "$OUT.tmp"' EXIT
 trap 'exit 130' INT TERM
 # 原样打包的文件（相对 ROOT）和生成的文件（相对 STAGE）
-FROM_ROOT=(deploy.sh README.md DEPLOY.md scripts template images pkg/README.txt
+FROM_ROOT=(deploy.sh README.md DEPLOY.md VERSION CHANGELOG.md docs scripts template images pkg/README.txt
            config/.gitkeep logs/.gitkeep work/.gitkeep)
-FROM_STAGE=(BUNDLE_INFO.txt)
+FROM_STAGE=(BUNDLE_INFO.txt RELEASE.md)
 if $WITH_UP; then FROM_ROOT+=(upgrade-pkg); else FROM_ROOT+=(upgrade-pkg/README.txt); fi
 for f in "${FROM_ROOT[@]}"; do [ -e "$ROOT/$f" ] || die "缺少 $f"; done
 
@@ -134,9 +175,12 @@ wanted_for() {   # arch -> 归一化 name:tag 列表
 INFO="$STAGE/BUNDLE_INFO.txt"
 {
     echo "k8s-deploy 离线部署包"
+    echo "安装包版本: v$PKG_VER"
     echo "包名:     $NAME.$EXT"
     echo "架构:     ${AL[*]}"
     echo "K8s:      v${VER:-?}"
+    echo "分支:     $GIT_BRANCH"
+    echo "commit:   $GIT_COMMIT"
     echo "代码版本: $(git -C "$ROOT" log -1 --format='%h %ci %s' 2>/dev/null || echo '未知')"
     echo "出包时间: $(date '+%F %T')  出包机: $(hostname)"
     echo "选项:     compress=$COMP-$LEVEL merge=$MERGE harbor=$HARBOR all_images=$ALL_IMAGES upgrade=$WITH_UP${EXTRA:+ extra=$EXTRA}"
@@ -227,6 +271,28 @@ for a in "${AL[@]}"; do
     FROM_STAGE+=("pkg/$a/harbor")
 done
 
+# 发布说明 = docs/releases/v<版本>.md + 自动生成的组件版本表；包内一份 RELEASE.md，包旁一份 -RELEASE.md
+imgver() { grep -vE '^\s*#' "$LIST" | grep -m1 -oE "/$1:[^|[:space:]]+" | cut -d: -f2; }
+{
+    cat "$REL_SRC"; echo; echo "---"; echo
+    echo "## 组件版本（出包时自动生成）"; echo
+    echo "| 组件 | 版本 |"; echo "|---|---|"
+    echo "| 安装包 | v$PKG_VER |"
+    echo "| 架构 | ${AL[*]} |"
+    echo "| Kubernetes | v${VER:-?} |"
+    echo "| Calico | $(imgver node) |"
+    echo "| Longhorn | $(imgver longhorn-manager) |"
+    echo "| metrics-server | $(imgver metrics-server) |"
+    echo "| Docker | $(ls "$ROOT/pkg/${AL[0]}/docker" 2>/dev/null | sed -n 's/^docker-\([0-9.]*\)\.tgz$/\1/p' | head -1) |"
+    for a in "${AL[@]}"; do
+        h=$(ls "$ROOT/pkg/$a"/harbor/harbor-offline-installer-*.tgz "$STAGE/pkg/$a"/harbor/harbor-offline-installer-*.tgz 2>/dev/null | head -1)
+        $HARBOR && [ -n "$h" ] && echo "| Harbor（$a） | $(basename "$h" .tgz | sed 's/^harbor-offline-installer-//') |"
+    done
+    for a in "${AL[@]}"; do echo "| 镜像数（$a） | $(grep -c . "$STAGE/pkg/$a/images/IMAGES.txt" 2>/dev/null || echo ?) |"; done
+    echo "| 分支 / commit | $GIT_BRANCH / ${GIT_COMMIT:0:12} |"
+    echo "| 出包时间 | $(date '+%F %T %z') |"
+} > "$STAGE/RELEASE.md"
+
 # ---------------- 3. 打包 ----------------
 step "3/5 打包 + 压缩（$COMP -$LEVEL）"
 # 估算原始大小
@@ -240,7 +306,8 @@ tar -cf - --hard-dereference --owner=0 --group=0 --numeric-owner \
     --exclude='__pycache__' --exclude='*.tmp' --transform 's,^,k8s-deploy/,S' \
     -C "$ROOT" "${FROM_ROOT[@]}" -C "$STAGE" "${FROM_STAGE[@]}" \
     | "${COMPRESS[@]}" > "$OUT.tmp" && mv "$OUT.tmp" "$OUT" || { rm -f "$OUT.tmp"; die "打包失败（看上方 tar 报错；常见原因：磁盘空间不足，或同时运行了两个 bundle）"; }
-cp "$ROOT/DEPLOY.md" "$OUTD/$NAME.DEPLOY.md"
+cp "$ROOT/DEPLOY.md" "$OUTD/$NAME-DEPLOY.md"
+cp "$STAGE/RELEASE.md" "$OUTD/$NAME-RELEASE.md"
 
 # ---------------- 4. 自检 ----------------
 if $TEST; then
@@ -255,6 +322,7 @@ fi
 step "5/5 校验和${SPLIT:+ + 分卷 $SPLIT}"
 cd "$OUTD" || die "无法进入 $OUTD"
 rm -f "$NAME.$EXT.part"* "$NAME.sha256"
+rm -f "$NAME.DEPLOY.md"   # 旧版命名
 sha256sum "$NAME.$EXT" > "$NAME.sha256"
 if [ -n "$SPLIT" ]; then
     split -b "$SPLIT" -d -a 2 "$NAME.$EXT" "$NAME.$EXT.part" || die "分卷失败"
@@ -272,4 +340,31 @@ else
     echo "  sha256sum -c $NAME.sha256"
 fi
 case "$COMP" in zst) echo "  tar -I zstd -xf $NAME.$EXT && cd k8s-deploy" ;; *) echo "  tar xf $NAME.$EXT && cd k8s-deploy" ;; esac
-echo "  然后按 k8s-deploy/DEPLOY.md 部署（同目录下也有一份 $NAME.DEPLOY.md）"
+echo "  然后按 k8s-deploy/DEPLOY.md 部署（同目录下也有一份 $NAME-DEPLOY.md）"
+
+# ---------------- 上传 OSS ----------------
+if $UPLOAD; then
+    echo; step "上传到 $OSS_DEST"
+    UPLOADS=()
+    if [ -n "$SPLIT" ]; then UPLOADS+=("$NAME.$EXT".part*); else UPLOADS+=("$NAME.$EXT"); fi
+    UPLOADS+=("$NAME.sha256" "$NAME-RELEASE.md" "$NAME-DEPLOY.md")
+    failed=""
+    for f in "${UPLOADS[@]}"; do
+        if "$OSSUTIL" cp -f "$OUTD/$f" "$OSS_DEST" >/dev/null 2>&1 && "$OSSUTIL" stat "$OSS_DEST$f" >/dev/null 2>&1; then
+            echo "  已上传 $OSS_DEST$f"
+        else
+            failed+=" $f"
+        fi
+    done
+    [ -z "$failed" ] || die "上传失败:$failed。文件仍在 $OUTD，可手工补传：$OSSUTIL cp -f $OUTD/<文件> $OSS_DEST"
+    info "已全部上传到 $OSS_DEST"
+    # 下载地址（内网下载服务按 bucket/目录 + 文件名签名）
+    DL_PREFIX="${DL_PREFIX:-http://172.88.1.51:8000/public/sign?bucket_name=$(sed 's#^oss://##; s#/$##' <<< "$OSS_DEST")&package_name=}"
+    echo; echo "下载地址与 SHA256（填进部署指南的下载表格）:"
+    while read -r sum f; do
+        [ -f "$OUTD/$f" ] || { echo "  $f（分卷合并后的整包，SHA256: $sum）"; continue; }
+        echo "  $f"; echo "    下载:   $DL_PREFIX$f"; echo "    SHA256: $sum"
+    done < "$OUTD/$NAME.sha256"
+else
+    echo; echo "未上传 OSS（--no-upload）。上传时把安装包、$NAME.sha256、$NAME-RELEASE.md 一起上传到 $OSS_DEST"
+fi

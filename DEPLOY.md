@@ -1,6 +1,6 @@
 # K8s 离线部署手册（从拿到部署包开始）
 
-适用：`k8s-deploy-v1.33.4-<架构>-<日期>.tar.xz`（K8s v1.33.4 / Calico v3.27.4 / Longhorn v1.9.1，KubeKey 离线安装）
+适用：`k8s-deploy-v<版本>-<架构>.tar.xz`（版本号见包内 `VERSION` / `RELEASE.md`；本版组件：K8s v1.33.4 / Calico v3.27.4 / Longhorn v1.9.1，KubeKey 离线安装）
 
 ---
 
@@ -79,16 +79,16 @@ UOS ARM 没有 iscsi 包。使用 Longhorn 时，需要事先在 UOS ARM 节点�
 cd /opt
 
 # 未分卷
-sha256sum -c k8s-deploy-v1.33.4-arm64-20261012.sha256
+sha256sum -c k8s-deploy-v3.1.0-arm64.sha256
 
 # 分卷：先校验各分卷，合并后再校验整包
-sha256sum -c --ignore-missing k8s-deploy-v1.33.4-arm64-20261012.sha256
-cat k8s-deploy-v1.33.4-arm64-20261012.tar.xz.part* > k8s-deploy-v1.33.4-arm64-20261012.tar.xz
-sha256sum -c --ignore-missing k8s-deploy-v1.33.4-arm64-20261012.sha256
-rm -f k8s-deploy-v1.33.4-arm64-20261012.tar.xz.part*        # 可选，释放空间
+sha256sum -c --ignore-missing k8s-deploy-v3.1.0-arm64.sha256
+cat k8s-deploy-v3.1.0-arm64.tar.xz.part* > k8s-deploy-v3.1.0-arm64.tar.xz
+sha256sum -c --ignore-missing k8s-deploy-v3.1.0-arm64.sha256
+rm -f k8s-deploy-v3.1.0-arm64.tar.xz.part*        # 可选，释放空间
 
 # 解压（几分钟），得到 /opt/k8s-deploy
-tar xf k8s-deploy-v1.33.4-arm64-20261012.tar.xz
+tar xf k8s-deploy-v3.1.0-arm64.tar.xz
 cd k8s-deploy
 cat BUNDLE_INFO.txt | head -8
 ```
