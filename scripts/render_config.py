@@ -87,6 +87,10 @@ config = {
         'auto_renew_certs': True,
         'ntp_server': '',            # 留空 = 第一台 master
         'timezone': 'Asia/Shanghai',
+        # 节点 /etc/resolv.conf 没有 nameserver 时（内网离线环境常见），02 步写入的上游 DNS。
+        #   有内网 DNS 就填它（多个用逗号分隔）；留空 = 用节点自己的 IP 占位：
+        #   CoreDNS / NodeLocal DNS 能正常启动，集群内域名解析正常，外部域名解析失败（离线环境本来就用不到）
+        'dns_upstream': '',
     },
     'etcd': {
         'data_dir': '/var/lib/etcd',

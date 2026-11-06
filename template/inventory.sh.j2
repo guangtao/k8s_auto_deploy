@@ -37,6 +37,7 @@ REGISTRY_INSECURE=true
 IMAGE_REPO={{ image_repo | sq }}
 
 K8S_VERSION={{ k8s_version | sq }}
+DNS_UPSTREAM={{ (kubernetes.dns_upstream or '') | sq }}
 ETCD_DATA_DIR={{ etcd.data_dir | sq }}
 
 LB_MODE={{ lb.mode | sq }}

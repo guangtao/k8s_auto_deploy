@@ -21,6 +21,19 @@ mkdir -p /etc/modules-load.d && printf "br_netfilter\noverlay\n" > /etc/modules-
     #   firewalld: CentOS/RHEL/Rocky/openEuler/麒麟服务器版/UOS 服务器版   ufw: Ubuntu/Debian 系（含部分 UOS、麒麟桌面版）
     #   iptables/ip6tables（iptables-services）、nftables: 部分系统装了也会开机加载规则
     #   iptables/nftables 的 stop 会清空规则：集群已运行（kubelet active）时不动它们，避免清掉 kube-proxy/Calico 的规则
+    # DNS：CoreDNS / NodeLocal DNS 把非集群域名转发给节点 /etc/resolv.conf 里的 nameserver，一个都没有时会直接起不来
+    #   （离线内网常见）。没有时写入 kubernetes.dns_upstream，留空则用节点自身 IP 占位；
+    #   NetworkManager 管理 resolv.conf 时会把它冲掉，因此同时让 NetworkManager 不再接管 DNS
+    local dns=${DNS_UPSTREAM:-$(node_ip "$n")}
+    run_remote "$n" "if ! grep -q '^nameserver' /etc/resolv.conf 2>/dev/null; then
+    if systemctl is-active -q NetworkManager 2>/dev/null; then
+        mkdir -p /etc/NetworkManager/conf.d && printf '[main]\\ndns=none\\n' > /etc/NetworkManager/conf.d/90-k8s-deploy-dns.conf
+        systemctl reload NetworkManager 2>/dev/null || true
+    fi
+    [ -L /etc/resolv.conf ] && cp --remove-destination \$(readlink -f /etc/resolv.conf) /etc/resolv.conf 2>/dev/null
+    for d in \$(echo '$dns' | tr ',' ' '); do echo \"nameserver \$d\" >> /etc/resolv.conf; done
+    echo '  /etc/resolv.conf 写入 nameserver $dns'
+fi" | sed "s/^/[$n]/" || true
     run_remote "$n" 'units="firewalld ufw"
 systemctl is-active -q kubelet 2>/dev/null || units="$units iptables ip6tables nftables"
 for s in $units; do

@@ -95,7 +95,8 @@ for n in $(k8s_nodes); do
     if [ -n "$ks" ] && [ "$ks" != disable ] && [ "$ks" != softmode ]; then
         warn "$n 麒麟 KYSEC 安全机制为 $ks，可能拦截 containerd/kubelet 等二进制执行；02 步会设为 softmode（需现场确认）"
     fi
-    [ "$(g dns)" -gt 0 ] 2>/dev/null && ok "$n resolv.conf 有 nameserver" || fail "$n /etc/resolv.conf 无 nameserver（CoreDNS 会异常）"
+    if [ "$(g dns)" -gt 0 ] 2>/dev/null; then ok "$n resolv.conf 有 nameserver"
+    else warn "$n /etc/resolv.conf 无 nameserver（CoreDNS 会起不来）；02 步会写入 ${DNS_UPSTREAM:-节点自身 IP（占位，仅保证集群内解析）}"; fi
     [ "$(g swap)" -gt 0 ] 2>/dev/null && warn "$n 开启了 swap（02 步会关闭）"
     [ "$(g selinux)" = Enforcing ] && warn "$n SELinux Enforcing（02 步会设为 permissive）"
     hn=$(g hostname)

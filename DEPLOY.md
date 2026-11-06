@@ -266,6 +266,7 @@ kubectl top nodes                           # metrics-server 正常
 | 07 kk 卡在 `pull image` | 节点到 Harbor 不通，或镜像没推全；先跑 `bash deploy.sh images` 看校验结果 |
 | 03 报"没有开始重启"或"未恢复" | 登录该节点（或看控制台）检查；处理后重跑 `bash deploy.sh install`，已重启完成的节点不会再重启 |
 | 部署机重启后没有自动继续 | `systemctl status k8s-deploy-resume` 和 `logs/install-resume-*.log` 查看原因；手动执行 `bash deploy.sh install -y` 即可 |
+| precheck 提示 `/etc/resolv.conf 无 nameserver`（离线内网常见） | 有内网 DNS 就在 `kubernetes.dns_upstream` 填它；没有就留空，02 步会写入节点自身 IP 占位。CoreDNS 能正常起来，集群内域名解析正常，只是外部域名解析不了 |
 | 07 失败想重来 | 修复后直接 `bash deploy.sh k8s`；已存在半成品集群时用 `bash deploy.sh k8s --force` |
 | Longhorn Pod 一直 Init / CrashLoop | 节点缺 iscsi（`systemctl status iscsid`）；UOS ARM 需要手工装 open-iscsi |
 | ARM 集群 metrics-server 不起 | 确认 `pkg/arm64/images/IMAGES.txt` 中有 `metrics-server:v0.7.2`，然后重跑 `images`、`addons` |
